@@ -2,7 +2,7 @@
   "name": "dataset_speech",
   "version": "0.1.0",
   "private": true,
-  "homepage": "https://<username>.github.io/dataset_speech",
+  "homepage": "https://danielcasanova12.github.io/dataset_speech",
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
