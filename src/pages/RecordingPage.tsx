@@ -61,7 +61,7 @@ const RecordingPage: React.FC = () => {
     const fetchPhrases = async () => {
       console.log("fetchPhrases: Starting to fetch phrases.");
       try {
-        const response = await fetch('/phrases.csv');
+        const response = await fetch(`${process.env.PUBLIC_URL}/phrases.csv`);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -72,10 +72,17 @@ const RecordingPage: React.FC = () => {
         const header = lines[0].split(',');
         const phraseData: Phrase[] = lines.slice(1).map(line => {
           const values = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
+          const rawVideoSrc = values[2] ? values[2].replace(/"/g, '').trim() : '';
+          const normalizedVideoSrc = rawVideoSrc
+            ? rawVideoSrc.startsWith('http')
+              ? rawVideoSrc
+              : `${process.env.PUBLIC_URL}${rawVideoSrc.startsWith('/') ? '' : '/'}${rawVideoSrc}`
+            : undefined;
+
           return {
             id: parseInt(values[0] || '0', 10),
             text: values[1] ? values[1].replace(/"/g, '') : '',
-            videoSrc: values[2] ? values[2].replace(/"/g, '') : undefined,
+            videoSrc: normalizedVideoSrc,
           };
         });
 

@@ -14,10 +14,7 @@ const HomePage: React.FC = () => {
         textAlign="center"
       >
         <Typography variant="h2" component="h1" gutterBottom>
-          Bem-vindo ao App de Gravação de Áudio
-        </Typography>
-        <Typography variant="h5" component="h2" color="textSecondary" paragraph>
-          Sua jornada para um áudio perfeito começa aqui.
+        Voice singing dataset
         </Typography>
         <Button
           variant="contained"
