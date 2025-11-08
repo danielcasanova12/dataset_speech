@@ -47,6 +47,7 @@ const RecordingPage: React.FC = () => {
   const [sessionId, setSessionId] = useState('');
   const [totalSessionTime, setTotalSessionTime] = useState(0);
   const [countdown, setCountdown] = useState(3);
+  const [countdownPhraseText, setCountdownPhraseText] = useState('');
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -60,12 +61,14 @@ const RecordingPage: React.FC = () => {
   useEffect(() => {
     const fetchPhrases = async () => {
       console.log("fetchPhrases: Starting to fetch phrases.");
+      console.log("fetchPhrases: Starting to fetch phrases.");
       try {
         const response = await fetch(`${process.env.PUBLIC_URL}/phrases.csv`);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         const csvText = await response.text();
+        console.log("fetchPhrases: CSV text loaded.", csvText.substring(0, 100) + "..."); // Log first 100 chars
         console.log("fetchPhrases: CSV text loaded.", csvText.substring(0, 100) + "..."); // Log first 100 chars
         
         const lines = csvText.trim().split('\n');
@@ -87,6 +90,7 @@ const RecordingPage: React.FC = () => {
         });
 
         setPhrases(phraseData);
+        console.log("fetchPhrases: Phrases loaded successfully.", phraseData);
         console.log("fetchPhrases: Phrases loaded successfully.", phraseData);
       } catch (error) {
         console.error("fetchPhrases: Failed to load phrases:", error);
@@ -116,6 +120,8 @@ const RecordingPage: React.FC = () => {
 
   const triggerPhraseAction = async (index: number) => {
     // Show countdown
+    const phraseText = phrases[index]?.text ?? '';
+    setCountdownPhraseText(phraseText);
     setCountdown(3);
     setIsCountdownModalOpen(true);
     await new Promise(resolve => {
@@ -484,6 +490,9 @@ const RecordingPage: React.FC = () => {
         <Box sx={style}>
           <Typography variant="h6" component="h2" textAlign="center">
             Prepare-se...
+          </Typography>
+          <Typography variant="body1" textAlign="center" sx={{ my: 2 }}>
+            {countdownPhraseText}
           </Typography>
           <Typography variant="h1" component="p" textAlign="center">
             {countdown}
