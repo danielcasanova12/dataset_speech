@@ -14,11 +14,54 @@ const modalStyle = {
   width: 400, bgcolor: 'background.paper', border: '2px solid #000', boxShadow: 24, p: 4,
 };
 
-const TutorialTooltip: React.FC<{ text: string; top: number; left: number; onNext: () => void }> = ({ text, top, left, onNext }) => (
-  <Paper elevation={6} sx={{ position: 'absolute', top, left, p: 2, maxWidth: 250, zIndex: 1400 }}>
-    <Typography variant="body2" sx={{ mb: 2 }}>{text}</Typography>
-    <Button onClick={onNext} variant="contained" size="small">Próximo</Button>
-  </Paper>
+const TutorialTooltip: React.FC<{ text: string; top: number; left: number; onNext: () => void }> = ({
+  text,
+  top,
+  left,
+  onNext,
+}) => (
+  <Box
+    sx={{
+      position: 'fixed',
+      top,
+      left,
+      zIndex: 1400,
+      transform: 'translateY(-50%)',
+    }}
+  >
+    <Paper
+      elevation={6}
+      sx={{
+        position: 'relative',
+        p: 2,
+        maxWidth: 260,
+        bgcolor: 'background.paper',
+        borderRadius: 2,
+      }}
+    >
+      <Typography variant="body2" sx={{ mb: 2 }}>
+        {text}
+      </Typography>
+      <Button onClick={onNext} variant="contained" size="small">
+        Próximo
+      </Button>
+
+      {/* Seta azul apontando para a ESQUERDA */}
+      <Box
+        sx={{
+          position: 'absolute',
+          top: '50%',
+          left: 0,
+          transform: 'translate(-100%, -50%)',
+          width: 0,
+          height: 0,
+          borderTop: '10px solid transparent',
+          borderBottom: '10px solid transparent',
+          borderRight: '10px solid #1976d2',
+        }}
+      />
+    </Paper>
+  </Box>
 );
 
 // --- MAIN COMPONENT ---
