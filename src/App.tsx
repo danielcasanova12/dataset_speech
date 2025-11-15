@@ -28,7 +28,7 @@ function App() {
       <Router>
         <Routes>
           <Route path="/" element={<HomePage />} />
-          <Route path="/record" element={<RecordingPage />} />
+          <Route path="/recording/:datasetId" element={<RecordingPage />} />
         </Routes>
       </Router>
     </ThemeProvider>
