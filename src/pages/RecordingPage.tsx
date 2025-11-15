@@ -6,7 +6,7 @@ import ConsentScreen from '../components/ConsentScreen';
 
 // --- INTERFACES & STYLES ---
 interface Phrase {
-  id: number; emocaoid: number; datasetid: number; text: string; videoSrc?: string; id_origem: number;
+  id: number; emocaoid: number; datasetid: number; text: string; videoSrc?: string;
 }
 
 const modalStyle = {
@@ -83,6 +83,8 @@ const RecordingPage: React.FC = () => {
   const [consentModalOpen, setConsentModalOpen] = useState(true);
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
   const [tooltipConfig, setTooltipConfig] = useState<{ open: boolean; text: string; top: number; left: number; arrowTop?: string | number; }>({ open: false, text: '', top: 0, left: 0 });
+  const [currentCsvFile, setCurrentCsvFile] = useState('phrases.csv');
+  const [isTransitionModalOpen, setIsTransitionModalOpen] = useState(false);
 
   // --- REFS ---
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -94,7 +96,10 @@ const RecordingPage: React.FC = () => {
   const phraseTextRef = useRef<HTMLElement>(null);
   const waveformRef = useRef<HTMLDivElement>(null);
   const saveButtonRef = useRef<HTMLButtonElement>(null);
+  const timerRef = useRef<HTMLElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const ignoreButtonRef = useRef<HTMLButtonElement>(null);
+  const homeButtonRef = useRef<HTMLAnchorElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // --- NAVIGATION & PARAMS ---
@@ -111,7 +116,7 @@ const RecordingPage: React.FC = () => {
     const fetchPhrases = async () => {
       setIsLoading(true);
       try {
-        const response = await fetch(`${process.env.PUBLIC_URL}/phrases.csv`);
+        const response = await fetch(`${process.env.PUBLIC_URL}/${currentCsvFile}`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const csvText = await response.text();
         const lines = csvText.trim().split('\n');
@@ -124,7 +129,6 @@ const RecordingPage: React.FC = () => {
                 datasetid: parseInt(values[header.indexOf('datasetid')] || '0'),
                 text: values[header.indexOf('text')]?.replace(/"/g, '') || '',
                 videoSrc: values[header.indexOf('videoSrc')]?.replace(/"/g, '') || undefined,
-                id_origem: parseInt(values[header.indexOf('id_origem')] || '0'),
             };
         });
         const filteredPhrases = phraseData.filter(p => p.datasetid.toString() === datasetId);
@@ -136,27 +140,51 @@ const RecordingPage: React.FC = () => {
       }
     };
     fetchPhrases();
-  }, [datasetId]);
+  }, [datasetId, currentCsvFile]);
 
   useEffect(() => {
-    const tutorialSteps = [
-      { ref: phraseTextRef, text: "Este é o texto que você deve ler em voz alta.", arrowPosition: '65%' },
-      { ref: waveformRef, text: "Aqui você verá a onda do seu áudio enquanto grava.", arrowPosition: '30%' },
-      { ref: saveButtonRef, text: "Use este botão para salvar sua gravação e ir para a próxima frase.", arrowPosition: '65%' },
-    ];
+    // Definição dos passos do tutorial com referências e textos.
+    const isReadingPart = currentCsvFile === 'phrases_leitura.csv';
+
+    const tutorialSteps = isReadingPart
+      ? [ // Tutorial simplificado para a parte de leitura
+        { ref: phraseTextRef, text: "Nesta parte, você só precisa ler a frase em voz alta.", arrowPosition: '50%' },
+        { ref: saveButtonRef, text: "Use este botão para salvar sua gravação e ir para a próxima frase.", arrowPosition: '50%' },
+      ]
+      : [ // Tutorial completo para a primeira parte
+        { ref: timerRef, text: "Aqui você verá quando começar a gravar e o tempo decorrido da gravação desta frase.", arrowPosition: '60%' },
+        { ref: phraseTextRef, text: "Quando começar a gravar, responda a esta pergunta em voz alta.", arrowPosition: '65%' },
+        { ref: ignoreButtonRef, text: "Caso não queira gravar o áudio para esta frase, use este botão para pular para a próxima.", arrowPosition: '65%' },
+        { ref: homeButtonRef, text: "A qualquer momento, você pode usar este botão para abandonar a sessão e voltar para a página inicial.", arrowPosition: '65%' },
+        { ref: saveButtonRef, text: "Use este botão para salvar sua gravação e ir para a próxima frase.", arrowPosition: '65%' },
+      ];
+
+    // Limpa o destaque de todos os elementos ao mudar de passo.
+    tutorialSteps.forEach(step => step.ref.current?.classList.remove('tutorial-highlight'));
+
     if (tutorialStep !== null && tutorialStep < tutorialSteps.length) {
       setTimeout(() => {
         const { ref, text, arrowPosition } = tutorialSteps[tutorialStep];
         if (ref.current) {
+          // Adiciona a classe de destaque ao elemento atual.
+          ref.current.classList.add('tutorial-highlight');
+
+          // Configura e exibe o tooltip.
           const rect = ref.current.getBoundingClientRect();
           setTooltipConfig({ open: true, text, top: rect.top + window.scrollY, left: rect.right + window.scrollX + 15, arrowTop: arrowPosition ?? (rect.height / 2) });
         }
       }, 100);
     } else {
-      setTooltipConfig({ open: false, text: '', top: 0, left: 0, arrowTop: '20%' });
-      if (tutorialStep !== null) setTutorialStep(null);
+      // Esconde o tooltip e finaliza o tutorial.
+      setTooltipConfig({ open: false, text: '', top: 0, left: 0 });
+      if (tutorialStep !== null) {
+        setTutorialStep(null);
+      }
     }
-  }, [tutorialStep]);
+
+    // Função de limpeza para remover o destaque quando o componente for desmontado.
+    return () => tutorialSteps.forEach(step => step.ref.current?.classList.remove('tutorial-highlight'));
+  }, [tutorialStep, currentCsvFile]);
 
   useEffect(() => {
     if (isRecording) {
@@ -178,7 +206,17 @@ const RecordingPage: React.FC = () => {
     setTutorialStep(0);
   };
   const handleDeclineConsent = () => navigate('/');
-  const handleNextTutorialStep = () => setTutorialStep(prev => (prev === null ? 0 : prev + 1));
+  const handleNextTutorialStep = () => {
+    const isReadingPart = currentCsvFile === 'phrases_leitura.csv';
+    const isLastStep = tutorialStep === (isReadingPart ? 1 : 4);
+
+    if (isLastStep) {
+      setTutorialStep(null); // Finaliza o modo tutorial
+      handleNextPhrase();    // Executa a ação de ir para a próxima frase
+    } else {
+      setTutorialStep(prev => (prev === null ? 0 : prev + 1));
+    }
+  };
 
   const isTutorialActive = tutorialStep !== null;
 
@@ -208,7 +246,11 @@ const RecordingPage: React.FC = () => {
       setAudioChunks([]);
       triggerPhraseAction(nextIndex);
     } else {
-      setOpenFinishModal(true);
+      if (currentCsvFile === 'phrases.csv') {
+        setIsTransitionModalOpen(true);
+      } else {
+        setOpenFinishModal(true);
+      }
     }
   };
   
@@ -220,7 +262,11 @@ const RecordingPage: React.FC = () => {
       setAudioChunks([]);
       triggerPhraseAction(nextIndex);
     } else {
-      setOpenFinishModal(true);
+      if (currentCsvFile === 'phrases.csv') {
+        setIsTransitionModalOpen(true);
+      } else {
+        setOpenFinishModal(true);
+      }
     }
   };
 
@@ -239,6 +285,13 @@ const RecordingPage: React.FC = () => {
     const currentPhrase = phrases[currentPhraseIndex];
     if (currentPhrase?.videoSrc) playVideo(currentPhrase.videoSrc);
   };
+
+  const handleContinueToNextPart = () => {
+    setIsTransitionModalOpen(false);
+    setCurrentCsvFile('phrases_leitura.csv');
+    setCurrentPhraseIndex(0);
+    setTutorialStep(0); // Reinicia o tutorial para a segunda parte
+  }
 
   const startRecording = async () => {
     try {
@@ -336,7 +389,22 @@ const RecordingPage: React.FC = () => {
       {consentModalOpen && <ConsentScreen onAccept={handleAcceptConsent} onDecline={handleDeclineConsent} />}
       {tooltipConfig.open && <TutorialTooltip text={tooltipConfig.text} top={tooltipConfig.top} left={tooltipConfig.left} onNext={handleNextTutorialStep} arrowTop={tooltipConfig.arrowTop} />}
 
-      <Box sx={{ filter: isTutorialActive ? 'brightness(0.7)' : 'none', transition: 'filter 0.3s' }}>
+      <Box sx={{
+        filter: isTutorialActive ? 'brightness(0.7)' : 'none',
+        transition: 'filter 0.3s',
+        // Animação de "brilho" para o tutorial
+        '@keyframes tutorial-glow': {
+          '0%': { boxShadow: '0 0 0 0px rgba(25, 118, 210, 0.7)' },
+          '70%': { boxShadow: '0 0 10px 10px rgba(25, 118, 210, 0)' },
+          '100%': { boxShadow: '0 0 0 0px rgba(25, 118, 210, 0)' },
+        },
+        '.tutorial-highlight': {
+          animation: 'tutorial-glow 1.5s infinite',
+          borderRadius: '8px', // Deixa o brilho mais bonito nos cantos
+          zIndex: 1301, // Garante que o brilho fique acima do fundo escurecido
+          position: 'relative',
+        }
+      }}>
         <Typography variant="h3" component="h1" textAlign="center" sx={{ mt: 4, mb: 2 }}>
           Gravação de Fala (Dataset: {datasetId})
         </Typography>
@@ -352,7 +420,7 @@ const RecordingPage: React.FC = () => {
                   <Typography variant="h6" sx={{ color: getDbfsColor(dbfs), mr: 2, fontWeight: 'bold' }}>
                     {isRecording && isFinite(dbfs) ? `${dbfs.toFixed(2)} dBFS` : ''}
                   </Typography>
-                  <Typography variant="h6">{formatTime(timer)}</Typography>
+                  <Typography ref={timerRef} variant="h6">{formatTime(timer)}</Typography>
                 </Box>
                 <Box ref={waveformRef} sx={{ height: 100, backgroundColor: 'rgba(0,0,0,0.1)', mb: 2, borderRadius: 1 }}>
                   <canvas ref={canvasRef} width="600" height="100" style={{ width: '100%', height: '100%' }} />
@@ -362,9 +430,11 @@ const RecordingPage: React.FC = () => {
                   {phrases[currentPhraseIndex]?.text}
                 </Typography>
                 <Box mt={4} display="flex" justifyContent="space-around" alignItems="center">
-                  <Button variant="outlined" onClick={handlePreviousPhrase} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen || currentPhraseIndex === 0}>Frase Anterior</Button>
-                  {hasVideo && <Button variant="outlined" color="info" onClick={handleReplayVideo} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen}>Repetir Vídeo</Button>}
-                  <Button variant="outlined" color="secondary" onClick={handleIgnoreAndGoNext} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen}>Ignorar Áudio</Button>
+                  {/* <Button variant="outlined" onClick={handlePreviousPhrase} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen || currentPhraseIndex === 0}>
+                    Frase Anterior
+                  </Button> */}
+                  {hasVideo && <Button variant="outlined" color="info" onClick={handleReplayVideo} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen}>Repetir Vídeo</Button>}                  
+                  <Button ref={ignoreButtonRef} variant="outlined" color="secondary" onClick={handleIgnoreAndGoNext} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen}>Ignorar Áudio</Button>
                   <Button ref={saveButtonRef} variant="contained" color="primary" onClick={handleNextPhrase} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen}>
                     {currentPhraseIndex < phrases.length - 1 ? 'Salvar e Próxima' : 'Finalizar'}
                   </Button>
@@ -376,12 +446,30 @@ const RecordingPage: React.FC = () => {
           <Typography variant="h5" textAlign="center">Nenhuma frase encontrada para este dataset.</Typography>
         )}
 
-        <Box mt={2} display="flex" justifyContent="center"><Button component={Link} to="/">Voltar para a Home</Button></Box>
+        <Box mt={2} display="flex" justifyContent="center"><Button ref={homeButtonRef} component={Link} to="/">Voltar para a Home</Button></Box>
       </Box>
 
       {/* Modals */}
       <Modal open={isCountdownModalOpen}><Box sx={modalStyle}><Typography variant="h1" textAlign="center">{countdown}</Typography></Box></Modal>
-      <Modal open={openFinishModal}><Box sx={modalStyle}><Typography variant="h6" textAlign="center">Sessão Finalizada!</Typography></Box></Modal>
+      <Modal open={isTransitionModalOpen}>
+        <Box sx={modalStyle}>
+          <Typography variant="h6" component="h2" textAlign="center">Parabéns, você concluiu a primeira parte!</Typography>
+          <Typography sx={{ mt: 2, textAlign: 'center' }}>
+            Agora vamos para a segunda. Nesta parte, você apenas precisa ler as frases que aparecerão na tela.
+          </Typography>
+          <Box mt={3} display="flex" justifyContent="center">
+            <Button onClick={handleContinueToNextPart} variant="contained">Continuar</Button>
+          </Box>
+        </Box>
+      </Modal>
+      <Modal open={openFinishModal}>
+        <Box sx={modalStyle}>
+          <Typography variant="h6" component="h2" textAlign="center">Sessão Finalizada!</Typography>
+          <Box mt={2} display="flex" justifyContent="center">
+            <Button component={Link} to="/">Voltar para a Home</Button>
+          </Box>
+        </Box>
+      </Modal>
     </Container>
   );
 };
