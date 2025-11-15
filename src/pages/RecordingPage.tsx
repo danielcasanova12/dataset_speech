@@ -9,6 +9,17 @@ interface Phrase {
   id: number; emocaoid: number; datasetid: number; text: string; videoSrc?: string;
 }
 
+const resolveVideoSrc = (src?: string): string | undefined => {
+  if (!src) return undefined;
+  const trimmed = src.trim();
+  if (!trimmed) return undefined;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+
+  const base = (process.env.PUBLIC_URL || '').replace(/\/$/, '');
+  if (trimmed.startsWith('/')) return `${base}${trimmed}`;
+  return `${base}/${trimmed}`;
+};
+
 const modalStyle = {
   position: 'absolute' as 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
   width: 400, bgcolor: 'background.paper', border: '2px solid #000', boxShadow: 24, p: 4,
@@ -85,6 +96,7 @@ const RecordingPage: React.FC = () => {
   const [tooltipConfig, setTooltipConfig] = useState<{ open: boolean; text: string; top: number; left: number; arrowTop?: string | number; }>({ open: false, text: '', top: 0, left: 0 });
   const [currentCsvFile, setCurrentCsvFile] = useState('phrases.csv');
   const [isTransitionModalOpen, setIsTransitionModalOpen] = useState(false);
+  const [isPhraseVisible, setIsPhraseVisible] = useState(true);
 
   // --- REFS ---
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -101,6 +113,10 @@ const RecordingPage: React.FC = () => {
   const ignoreButtonRef = useRef<HTMLButtonElement>(null);
   const homeButtonRef = useRef<HTMLAnchorElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  const currentPhrase = phrases[currentPhraseIndex];
+  const currentVideoSrc = resolveVideoSrc(currentPhrase?.videoSrc);
+  const hasVideo = !!currentVideoSrc;
 
   // --- NAVIGATION & PARAMS ---
   const navigate = useNavigate();
@@ -132,7 +148,14 @@ const RecordingPage: React.FC = () => {
             };
         });
         const filteredPhrases = phraseData.filter(p => p.datasetid.toString() === datasetId);
-        setPhrases(filteredPhrases);
+        const uniquePhrases = filteredPhrases.filter((phrase, index, self) =>
+          index === self.findIndex(p =>
+            p.text === phrase.text &&
+            p.datasetid === phrase.datasetid &&
+            (p.videoSrc || '') === (phrase.videoSrc || '')
+          )
+        );
+        setPhrases(uniquePhrases);
       } catch (error) {
         console.error("Failed to load phrases:", error);
       } finally {
@@ -220,31 +243,44 @@ const RecordingPage: React.FC = () => {
 
   const isTutorialActive = tutorialStep !== null;
 
-  const triggerPhraseAction = async (index: number) => {
+  const triggerPhraseAction = (index: number, onReady: () => void) => {
     const phrase = phrases[index];
     if (!phrase) return;
-    setCountdown(3);
-    setIsCountdownModalOpen(true);
-    await new Promise(resolve => {
-      const timer = setInterval(() => {
+
+    const finalizeTransition = () => {
+      onReady();
+      if (!phrase.videoSrc) {
+        startRecording();
+      }
+    };
+
+    if (!phrase.videoSrc) {
+      setIsVideoPlaying(false);
+      setCountdown(3);
+      setIsCountdownModalOpen(true);
+      const countdownTimer = setInterval(() => {
         setCountdown(prev => {
-          if (prev === 1) { clearInterval(timer); resolve(null); }
-          return prev - 1;
+          if (prev > 1) return prev - 1;
+          clearInterval(countdownTimer);
+          setIsCountdownModalOpen(false);
+          finalizeTransition();
+          return 0;
         });
       }, 1000);
-    });
-    setIsCountdownModalOpen(false);
-    if (phrase.videoSrc) playVideo(phrase.videoSrc);
-    else { setIsVideoPlaying(false); await startRecording(); }
+    } else {
+      setIsCountdownModalOpen(false);
+      finalizeTransition();
+    }
   };
 
   const handleNextPhrase = () => {
     if (isRecording) stopRecording();
     if (currentPhraseIndex < phrases.length - 1) {
       const nextIndex = currentPhraseIndex + 1;
-      setCurrentPhraseIndex(nextIndex);
-      setAudioChunks([]);
-      triggerPhraseAction(nextIndex);
+      triggerPhraseAction(nextIndex, () => {
+        setCurrentPhraseIndex(nextIndex);
+        setAudioChunks([]);
+      });
     } else {
       if (currentCsvFile === 'phrases.csv') {
         setIsTransitionModalOpen(true);
@@ -258,9 +294,10 @@ const RecordingPage: React.FC = () => {
     if (isRecording) stopRecording();
     if (currentPhraseIndex < phrases.length - 1) {
       const nextIndex = currentPhraseIndex + 1;
-      setCurrentPhraseIndex(nextIndex);
-      setAudioChunks([]);
-      triggerPhraseAction(nextIndex);
+      triggerPhraseAction(nextIndex, () => {
+        setCurrentPhraseIndex(nextIndex);
+        setAudioChunks([]);
+      });
     } else {
       if (currentCsvFile === 'phrases.csv') {
         setIsTransitionModalOpen(true);
@@ -274,16 +311,16 @@ const RecordingPage: React.FC = () => {
     if (isRecording) stopRecording();
     if (currentPhraseIndex > 0) {
       const prevIndex = currentPhraseIndex - 1;
-      setCurrentPhraseIndex(prevIndex);
-      setAudioChunks([]);
-      triggerPhraseAction(prevIndex);
+      triggerPhraseAction(prevIndex, () => {
+        setCurrentPhraseIndex(prevIndex);
+        setAudioChunks([]);
+      });
     }
   };
 
   const handleReplayVideo = () => {
     if (isRecording) stopRecording();
-    const currentPhrase = phrases[currentPhraseIndex];
-    if (currentPhrase?.videoSrc) playVideo(currentPhrase.videoSrc);
+    if (hasVideo) playVideo();
   };
 
   const handleContinueToNextPart = () => {
@@ -318,19 +355,52 @@ const RecordingPage: React.FC = () => {
     }
   };
 
-  const playVideo = (src: string) => {
-    if (videoRef.current) {
-      videoRef.current.src = src;
-      setIsVideoPlaying(true);
-      setIsInitialPlayback(true);
-      videoRef.current.play().catch(err => console.error("Video play failed:", err));
+  const playVideo = (reload = false) => {
+    const videoElement = videoRef.current;
+    if (!videoElement) return;
+
+    if (reload) {
+      videoElement.load();
+    }
+
+    setIsVideoPlaying(true);
+    setIsInitialPlayback(true);
+    setIsPhraseVisible(false);
+    videoElement.currentTime = 0;
+    const playPromise = videoElement.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(err => {
+        console.error("Video play failed:", err);
+        setIsVideoPlaying(false);
+        setIsInitialPlayback(false);
+        setIsPhraseVisible(true);
+      });
     }
   };
+
+  useEffect(() => {
+    if (!currentVideoSrc) {
+      setIsVideoPlaying(false);
+      setIsInitialPlayback(false);
+      setIsPhraseVisible(true);
+      return;
+    }
+    playVideo(true);
+  }, [currentVideoSrc, currentPhraseIndex]);
 
   const handleVideoEnd = () => {
     setIsInitialPlayback(false);
     setIsVideoPlaying(false);
+    setIsPhraseVisible(true);
+    setIsCountdownModalOpen(false);
     startRecording();
+  };
+
+  const handleVideoError = () => {
+    console.error("Failed to load video source:", currentVideoSrc);
+    setIsVideoPlaying(false);
+    setIsInitialPlayback(false);
+    setIsPhraseVisible(true);
   };
 
   const visualize = () => {
@@ -382,8 +452,6 @@ const RecordingPage: React.FC = () => {
     return <Container sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}><CircularProgress /></Container>;
   }
 
-  const hasVideo = !!phrases[currentPhraseIndex]?.videoSrc;
-
   return (
     <Container maxWidth="lg">
       {consentModalOpen && <ConsentScreen onAccept={handleAcceptConsent} onDecline={handleDeclineConsent} />}
@@ -425,9 +493,21 @@ const RecordingPage: React.FC = () => {
                 <Box ref={waveformRef} sx={{ height: 100, backgroundColor: 'rgba(0,0,0,0.1)', mb: 2, borderRadius: 1 }}>
                   <canvas ref={canvasRef} width="600" height="100" style={{ width: '100%', height: '100%' }} />
                 </Box>
-                {hasVideo && <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}><video ref={videoRef} onEnded={handleVideoEnd} width="100%" height="300" controls /></Box>}
+                {hasVideo && (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+                    <video
+                      ref={videoRef}
+                      src={currentVideoSrc}
+                      onEnded={handleVideoEnd}
+                      onError={handleVideoError}
+                      width="100%"
+                      height="300"
+                      controls
+                    />
+                  </Box>
+                )}
                 <Typography ref={phraseTextRef} variant="h4" sx={{ minHeight: 100, textAlign: 'center', my: 2 }}>
-                  {phrases[currentPhraseIndex]?.text}
+                  {isPhraseVisible ? currentPhrase?.text : ''}
                 </Typography>
                 <Box mt={4} display="flex" justifyContent="space-around" alignItems="center">
                   {/* <Button variant="outlined" onClick={handlePreviousPhrase} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen || currentPhraseIndex === 0}>
