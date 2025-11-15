@@ -9,7 +9,6 @@ interface Phrase {
   id: number; emocaoid: number; datasetid: number; text: string; videoSrc?: string; id_origem: number;
 }
 
-
 const modalStyle = {
   position: 'absolute' as 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
   width: 400, bgcolor: 'background.paper', border: '2px solid #000', boxShadow: 24, p: 4,
@@ -37,8 +36,6 @@ const RecordingPage: React.FC = () => {
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [isInitialPlayback, setIsInitialPlayback] = useState(false);
   const [countdown, setCountdown] = useState(3);
-  
-  // Onboarding State
   const [consentModalOpen, setConsentModalOpen] = useState(true);
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
   const [tooltipConfig, setTooltipConfig] = useState<{ open: boolean; text: string; top: number; left: number }>({ open: false, text: '', top: 0, left: 0 });
@@ -60,24 +57,21 @@ const RecordingPage: React.FC = () => {
   const navigate = useNavigate();
   const { datasetId } = useParams<{ datasetId: string }>();
 
-  // --- ONBOARDING EFFECT ---
+  // --- EFFECTS ---
   useEffect(() => {
-    // Always show consent screen on page load
     setConsentModalOpen(true);
   }, []);
 
-  // --- DATA FETCHING ---
   useEffect(() => {
+    if (!datasetId) return;
     const fetchPhrases = async () => {
       setIsLoading(true);
       try {
         const response = await fetch(`${process.env.PUBLIC_URL}/phrases.csv`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        
         const csvText = await response.text();
         const lines = csvText.trim().split('\n');
         const header = lines[0].split(',').map(h => h.trim());
-        
         const phraseData: Phrase[] = lines.slice(1).map(line => {
             const values = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
             return {
@@ -89,7 +83,6 @@ const RecordingPage: React.FC = () => {
                 id_origem: parseInt(values[header.indexOf('id_origem')] || '0'),
             };
         });
-
         const filteredPhrases = phraseData.filter(p => p.datasetid.toString() === datasetId);
         setPhrases(filteredPhrases);
       } catch (error) {
@@ -101,32 +94,26 @@ const RecordingPage: React.FC = () => {
     fetchPhrases();
   }, [datasetId]);
 
-  // --- TUTORIAL LOGIC ---
   useEffect(() => {
     const tutorialSteps = [
       { ref: phraseTextRef, text: "Este é o texto que você deve ler em voz alta." },
       { ref: waveformRef, text: "Aqui você verá a onda do seu áudio enquanto grava." },
       { ref: saveButtonRef, text: "Use este botão para salvar sua gravação e ir para a próxima frase." },
     ];
-
     if (tutorialStep !== null && tutorialStep < tutorialSteps.length) {
-      const { ref, text } = tutorialSteps[tutorialStep];
-      // Ensure the ref is attached and visible before trying to get its position
       setTimeout(() => {
+        const { ref, text } = tutorialSteps[tutorialStep];
         if (ref.current) {
           const rect = ref.current.getBoundingClientRect();
-          setTooltipConfig({
-            open: true, text, top: rect.top + window.scrollY, left: rect.right + window.scrollX + 15,
-          });
+          setTooltipConfig({ open: true, text, top: rect.top + window.scrollY, left: rect.right + window.scrollX + 15 });
         }
-      }, 100); // A small delay to ensure the DOM is updated
+      }, 100);
     } else {
       setTooltipConfig({ open: false, text: '', top: 0, left: 0 });
-      if (tutorialStep !== null) setTutorialStep(null); // End tutorial
+      if (tutorialStep !== null) setTutorialStep(null);
     }
   }, [tutorialStep]);
 
-  // Effect for recording timer and visualization
   useEffect(() => {
     if (isRecording) {
       timerIntervalId.current = setInterval(() => setTimer((prev) => prev + 1), 1000);
@@ -143,9 +130,8 @@ const RecordingPage: React.FC = () => {
 
   // --- HANDLERS ---
   const handleAcceptConsent = () => {
-    // localStorage.setItem('consentGiven', 'true'); // No longer saving to cache
     setConsentModalOpen(false);
-    setTutorialStep(0); // Start tutorial
+    setTutorialStep(0);
   };
   const handleDeclineConsent = () => navigate('/');
   const handleNextTutorialStep = () => setTutorialStep(prev => (prev === null ? 0 : prev + 1));
@@ -155,7 +141,6 @@ const RecordingPage: React.FC = () => {
   const triggerPhraseAction = async (index: number) => {
     const phrase = phrases[index];
     if (!phrase) return;
-
     setCountdown(3);
     setIsCountdownModalOpen(true);
     await new Promise(resolve => {
@@ -167,14 +152,12 @@ const RecordingPage: React.FC = () => {
       }, 1000);
     });
     setIsCountdownModalOpen(false);
-
     if (phrase.videoSrc) playVideo(phrase.videoSrc);
     else { setIsVideoPlaying(false); await startRecording(); }
   };
 
   const handleNextPhrase = () => {
     if (isRecording) stopRecording();
-    // TODO: Logic to send audio to the backend
     if (currentPhraseIndex < phrases.length - 1) {
       const nextIndex = currentPhraseIndex + 1;
       setCurrentPhraseIndex(nextIndex);
@@ -214,18 +197,20 @@ const RecordingPage: React.FC = () => {
   };
 
   const startRecording = async () => {
-    if (!audioContextRef.current) audioContextRef.current = new AudioContext();
-    if (!analyserRef.current) analyserRef.current = audioContextRef.current.createAnalyser();
-    
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    sourceRef.current = audioContextRef.current.createMediaStreamSource(stream);
-    sourceRef.current.connect(analyserRef.current);
-    
-    mediaRecorderRef.current = new MediaRecorder(stream);
-    mediaRecorderRef.current.ondataavailable = (event) => setAudioChunks((prev) => [...prev, event.data]);
-    mediaRecorderRef.current.start();
-    setIsRecording(true);
-    setTimer(0);
+    try {
+      if (!audioContextRef.current) audioContextRef.current = new AudioContext();
+      if (!analyserRef.current) analyserRef.current = audioContextRef.current.createAnalyser();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      sourceRef.current = audioContextRef.current.createMediaStreamSource(stream);
+      sourceRef.current.connect(analyserRef.current);
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      mediaRecorderRef.current.ondataavailable = (event) => setAudioChunks((prev) => [...prev, event.data]);
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+      setTimer(0);
+    } catch (err) {
+      console.error("Failed to start recording:", err);
+    }
   };
 
   const stopRecording = () => {
@@ -262,6 +247,16 @@ const RecordingPage: React.FC = () => {
     const draw = () => {
       animationFrameId.current = requestAnimationFrame(draw);
       analyserRef.current?.getByteTimeDomainData(dataArray);
+      
+      let sumSquares = 0.0;
+      for (let i = 0; i < dataArray.length; i++) {
+        const amplitude = (dataArray[i] / 128.0) - 1.0;
+        sumSquares += amplitude * amplitude;
+      }
+      const rms = Math.sqrt(sumSquares / dataArray.length);
+      const db = 20 * Math.log10(rms);
+      setDbfs(db);
+
       canvasCtx.fillStyle = '#1e1e1e';
       canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
       canvasCtx.lineWidth = 2;
@@ -293,45 +288,54 @@ const RecordingPage: React.FC = () => {
   const hasVideo = !!phrases[currentPhraseIndex]?.videoSrc;
 
   return (
-    <Container maxWidth="lg" sx={{ filter: isTutorialActive ? 'brightness(0.7)' : 'none', transition: 'filter 0.3s' }}>
+    <Container maxWidth="lg">
       {consentModalOpen && <ConsentScreen onAccept={handleAcceptConsent} onDecline={handleDeclineConsent} />}
-
       {tooltipConfig.open && <TutorialTooltip text={tooltipConfig.text} top={tooltipConfig.top} left={tooltipConfig.left} onNext={handleNextTutorialStep} />}
 
-      <Typography variant="h3" component="h1" textAlign="center" sx={{ mt: 4, mb: 2 }}>
-        Gravação de Fala (Dataset: {datasetId})
-      </Typography>
+      <Box sx={{ filter: isTutorialActive ? 'brightness(0.7)' : 'none', transition: 'filter 0.3s' }}>
+        <Typography variant="h3" component="h1" textAlign="center" sx={{ mt: 4, mb: 2 }}>
+          Gravação de Fala (Dataset: {datasetId})
+        </Typography>
 
-      {phrases.length > 0 ? (
-        <Paper elevation={3} sx={{ p: 4, pointerEvents: isTutorialActive ? 'none' : 'auto' }}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" mb={1}>
-                {isRecording && <FiberManualRecordIcon sx={{ color: 'red', animation: 'blinking 1s infinite' }} />}<Typography variant="h6" sx={{ ml: 1 }}>{isRecording ? 'Gravando...' : isVideoPlaying ? 'Reproduzindo Vídeo...' : 'Pronto'}</Typography>
-              </Box>
-              <Box ref={waveformRef} sx={{ height: 100, backgroundColor: 'rgba(0,0,0,0.1)', mb: 2, borderRadius: 1 }}>
-                <canvas ref={canvasRef} width="600" height="100" style={{ width: '100%', height: '100%' }} />
-              </Box>
-              {hasVideo && <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}><video ref={videoRef} onEnded={handleVideoEnd} width="100%" height="300" controls /></Box>}
-              <Typography ref={phraseTextRef} variant="h4" sx={{ minHeight: 100, textAlign: 'center', my: 2 }}>
-                {phrases[currentPhraseIndex]?.text}
-              </Typography>
-              <Box mt={4} display="flex" justifyContent="space-around" alignItems="center">
-                <Button variant="outlined" onClick={handlePreviousPhrase} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen || currentPhraseIndex === 0}>Frase Anterior</Button>
-                {hasVideo && <Button variant="outlined" color="info" onClick={handleReplayVideo} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen}>Repetir Vídeo</Button>}
-                <Button variant="outlined" color="secondary" onClick={handleIgnoreAndGoNext} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen}>Ignorar Áudio</Button>
-                <Button ref={saveButtonRef} variant="contained" color="primary" onClick={handleNextPhrase} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen}>
-                  {currentPhraseIndex < phrases.length - 1 ? 'Salvar e Próxima' : 'Finalizar'}
-                </Button>
-              </Box>
-            </CardContent>
-          </Card>
-        </Paper>
-      ) : (
-        <Typography variant="h5" textAlign="center">Nenhuma frase encontrada para este dataset.</Typography>
-      )}
+        {phrases.length > 0 ? (
+          <Paper elevation={3} sx={{ p: 4, pointerEvents: isTutorialActive ? 'none' : 'auto' }}>
+            <Card>
+              <CardContent>
+                <Box display="flex" alignItems="center" mb={1}>
+                  {isRecording && <FiberManualRecordIcon sx={{ color: 'red', animation: 'blinking 1s infinite' }} />}
+                  <Typography variant="h6" sx={{ ml: 1 }}>{isRecording ? 'Gravando...' : isVideoPlaying ? 'Reproduzindo Vídeo...' : 'Pronto'}</Typography>
+                  <Box flexGrow={1} />
+                  <Typography variant="h6" sx={{ color: getDbfsColor(dbfs), mr: 2, fontWeight: 'bold' }}>
+                    {isRecording && isFinite(dbfs) ? `${dbfs.toFixed(2)} dBFS` : ''}
+                  </Typography>
+                  <Typography variant="h6">{formatTime(timer)}</Typography>
+                </Box>
+                <Box ref={waveformRef} sx={{ height: 100, backgroundColor: 'rgba(0,0,0,0.1)', mb: 2, borderRadius: 1 }}>
+                  <canvas ref={canvasRef} width="600" height="100" style={{ width: '100%', height: '100%' }} />
+                </Box>
+                {hasVideo && <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}><video ref={videoRef} onEnded={handleVideoEnd} width="100%" height="300" controls /></Box>}
+                <Typography ref={phraseTextRef} variant="h4" sx={{ minHeight: 100, textAlign: 'center', my: 2 }}>
+                  {phrases[currentPhraseIndex]?.text}
+                </Typography>
+                <Box mt={4} display="flex" justifyContent="space-around" alignItems="center">
+                  <Button variant="outlined" onClick={handlePreviousPhrase} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen || currentPhraseIndex === 0}>Frase Anterior</Button>
+                  {hasVideo && <Button variant="outlined" color="info" onClick={handleReplayVideo} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen}>Repetir Vídeo</Button>}
+                  <Button variant="outlined" color="secondary" onClick={handleIgnoreAndGoNext} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen}>Ignorar Áudio</Button>
+                  <Button ref={saveButtonRef} variant="contained" color="primary" onClick={handleNextPhrase} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen}>
+                    {currentPhraseIndex < phrases.length - 1 ? 'Salvar e Próxima' : 'Finalizar'}
+                  </Button>
+                </Box>
+              </CardContent>
+            </Card>
+          </Paper>
+        ) : (
+          <Typography variant="h5" textAlign="center">Nenhuma frase encontrada para este dataset.</Typography>
+        )}
 
-      <Box mt={2} display="flex" justifyContent="center"><Button component={Link} to="/">Voltar para a Home</Button></Box>
+        <Box mt={2} display="flex" justifyContent="center"><Button component={Link} to="/">Voltar para a Home</Button></Box>
+      </Box>
+
+      {/* Modals */}
       <Modal open={isCountdownModalOpen}><Box sx={modalStyle}><Typography variant="h1" textAlign="center">{countdown}</Typography></Box></Modal>
       <Modal open={openFinishModal}><Box sx={modalStyle}><Typography variant="h6" textAlign="center">Sessão Finalizada!</Typography></Box></Modal>
     </Container>
