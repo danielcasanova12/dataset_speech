@@ -14,11 +14,12 @@ const modalStyle = {
   width: 400, bgcolor: 'background.paper', border: '2px solid #000', boxShadow: 24, p: 4,
 };
 
-const TutorialTooltip: React.FC<{ text: string; top: number; left: number; onNext: () => void }> = ({
+const TutorialTooltip: React.FC<{ text: string; top: number; left: number; onNext: () => void; arrowTop?: string | number; }> = ({
   text,
   top,
   left,
   onNext,
+  arrowTop = '50%',
 }) => (
   <Box
     sx={{
@@ -50,7 +51,7 @@ const TutorialTooltip: React.FC<{ text: string; top: number; left: number; onNex
       <Box
         sx={{
           position: 'absolute',
-          top: '50%',
+          top: arrowTop,
           left: 0,
           transform: 'translate(-100%, -50%)',
           width: 0,
@@ -81,7 +82,7 @@ const RecordingPage: React.FC = () => {
   const [countdown, setCountdown] = useState(3);
   const [consentModalOpen, setConsentModalOpen] = useState(true);
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
-  const [tooltipConfig, setTooltipConfig] = useState<{ open: boolean; text: string; top: number; left: number }>({ open: false, text: '', top: 0, left: 0 });
+  const [tooltipConfig, setTooltipConfig] = useState<{ open: boolean; text: string; top: number; left: number; arrowTop?: string | number; }>({ open: false, text: '', top: 0, left: 0 });
 
   // --- REFS ---
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -139,20 +140,20 @@ const RecordingPage: React.FC = () => {
 
   useEffect(() => {
     const tutorialSteps = [
-      { ref: phraseTextRef, text: "Este é o texto que você deve ler em voz alta." },
-      { ref: waveformRef, text: "Aqui você verá a onda do seu áudio enquanto grava." },
-      { ref: saveButtonRef, text: "Use este botão para salvar sua gravação e ir para a próxima frase." },
+      { ref: phraseTextRef, text: "Este é o texto que você deve ler em voz alta.", arrowPosition: '65%' },
+      { ref: waveformRef, text: "Aqui você verá a onda do seu áudio enquanto grava.", arrowPosition: '30%' },
+      { ref: saveButtonRef, text: "Use este botão para salvar sua gravação e ir para a próxima frase.", arrowPosition: '65%' },
     ];
     if (tutorialStep !== null && tutorialStep < tutorialSteps.length) {
       setTimeout(() => {
-        const { ref, text } = tutorialSteps[tutorialStep];
+        const { ref, text, arrowPosition } = tutorialSteps[tutorialStep];
         if (ref.current) {
           const rect = ref.current.getBoundingClientRect();
-          setTooltipConfig({ open: true, text, top: rect.top + window.scrollY, left: rect.right + window.scrollX + 15 });
+          setTooltipConfig({ open: true, text, top: rect.top + window.scrollY, left: rect.right + window.scrollX + 15, arrowTop: arrowPosition ?? (rect.height / 2) });
         }
       }, 100);
     } else {
-      setTooltipConfig({ open: false, text: '', top: 0, left: 0 });
+      setTooltipConfig({ open: false, text: '', top: 0, left: 0, arrowTop: '20%' });
       if (tutorialStep !== null) setTutorialStep(null);
     }
   }, [tutorialStep]);
@@ -333,7 +334,7 @@ const RecordingPage: React.FC = () => {
   return (
     <Container maxWidth="lg">
       {consentModalOpen && <ConsentScreen onAccept={handleAcceptConsent} onDecline={handleDeclineConsent} />}
-      {tooltipConfig.open && <TutorialTooltip text={tooltipConfig.text} top={tooltipConfig.top} left={tooltipConfig.left} onNext={handleNextTutorialStep} />}
+      {tooltipConfig.open && <TutorialTooltip text={tooltipConfig.text} top={tooltipConfig.top} left={tooltipConfig.left} onNext={handleNextTutorialStep} arrowTop={tooltipConfig.arrowTop} />}
 
       <Box sx={{ filter: isTutorialActive ? 'brightness(0.7)' : 'none', transition: 'filter 0.3s' }}>
         <Typography variant="h3" component="h1" textAlign="center" sx={{ mt: 4, mb: 2 }}>
