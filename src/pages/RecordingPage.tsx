@@ -4,6 +4,12 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import ConsentScreen from '../components/ConsentScreen';
 
+const datasetNames: { [key: number]: string } = {
+  1: "Dataset voz geral",
+  2: "Dataset canto",
+  3: "Dataset emoção",
+};
+
 // --- INTERFACES & STYLES ---
 interface Phrase {
   id: number; emocaoid: number; datasetid: number; text: string; videoSrc?: string;
@@ -474,7 +480,7 @@ const RecordingPage: React.FC = () => {
         }
       }}>
         <Typography variant="h3" component="h1" textAlign="center" sx={{ mt: 4, mb: 2 }}>
-          Gravação de Fala (Dataset: {datasetId})
+          Gravação de Fala ({datasetId ? datasetNames[parseInt(datasetId, 10)] : ''})
         </Typography>
 
         {phrases.length > 0 ? (

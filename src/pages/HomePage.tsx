@@ -2,6 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Typography, Container, Box, CircularProgress, Grid } from '@mui/material';
 
+const datasetNames: { [key: number]: string } = {
+  1: "Dataset voz geral",
+  2: "Dataset canto",
+  3: "Dataset emoção",
+};
+
 const HomePage: React.FC = () => {
   const [datasets, setDatasets] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -73,7 +79,7 @@ const HomePage: React.FC = () => {
                   to={`/recording/${datasetId}`}
                   size="large"
                 >
-                  Dataset {datasetId}
+                  {datasetNames[datasetId] || `Dataset ${datasetId}`}
                 </Button>
               </Grid>
             ))}
