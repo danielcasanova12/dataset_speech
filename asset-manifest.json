@@ -1,15 +1,15 @@
 {
   "files": {
     "main.css": "/dataset_speech/static/css/main.e6c13ad2.css",
-    "main.js": "/dataset_speech/static/js/main.77d7af2b.js",
+    "main.js": "/dataset_speech/static/js/main.262322c8.js",
     "static/js/453.5ebfde8b.chunk.js": "/dataset_speech/static/js/453.5ebfde8b.chunk.js",
     "index.html": "/dataset_speech/index.html",
     "main.e6c13ad2.css.map": "/dataset_speech/static/css/main.e6c13ad2.css.map",
-    "main.77d7af2b.js.map": "/dataset_speech/static/js/main.77d7af2b.js.map",
+    "main.262322c8.js.map": "/dataset_speech/static/js/main.262322c8.js.map",
     "453.5ebfde8b.chunk.js.map": "/dataset_speech/static/js/453.5ebfde8b.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.e6c13ad2.css",
-    "static/js/main.77d7af2b.js"
+    "static/js/main.262322c8.js"
   ]
 }
