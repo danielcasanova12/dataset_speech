@@ -10,7 +10,6 @@ const datasetNames: { [key: number]: string } = {
   3: "Dataset emoção",
 };
 
-// --- INTERFACES & STYLES ---
 interface Phrase {
   id: number; emocaoid: number; datasetid: number; text: string; videoSrc?: string;
 }
