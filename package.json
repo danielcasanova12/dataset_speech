@@ -1,8 +1,10 @@
+
 {
   "name": "dataset_speech",
   "version": "1.1.1",
   "private": true,
-  "homepage": "https://danielcasanova12.github.io/dataset_speech",
+
+  "homepage": ".",
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
