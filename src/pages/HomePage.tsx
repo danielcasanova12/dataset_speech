@@ -15,7 +15,7 @@ const HomePage: React.FC = () => {
   useEffect(() => {
     const fetchDatasets = async () => {
       try {
-        const response = await fetch(`${process.env.PUBLIC_URL}/phrases.csv`);
+        const response = await fetch(`${process.env.PUBLIC_URL}/phrases_leitura.csv`);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -23,10 +23,10 @@ const HomePage: React.FC = () => {
         
         const lines = csvText.trim().split('\n');
         const header = lines[0].split(',').map(h => h.trim());
-        const datasetidIndex = header.indexOf('datasetid');
+        const datasetidIndex = header.indexOf('datasetId');
 
         if (datasetidIndex === -1) {
-            throw new Error("'datasetid' column not found in phrases.csv");
+            throw new Error("'datasetId' column not found in phrases_leitura.csv");
         }
 
         const datasetIds = lines.slice(1).map(line => {

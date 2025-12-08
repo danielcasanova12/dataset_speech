@@ -1,33 +1,30 @@
 id,emocaoId,datasetId,text,videoSrc,id_origem
-1,0,2,"Qual é o seu nome completo e sua idade?","",0
-2,0,2,"Você concorda em participar desta gravação para fins de pesquisa em síntese de fala, reconhecimento de emoções e identificação de sotaques? Seus dados serão anonimizados e você pode solicitar a exclusão a qualquer momento. Concorda?","",0
-3,0,2,"Onde você nasceu? (cidade e estado)","",0
-4,0,2,"Onde você mora hoje?","",0
-5,0,2,"Onde você passou a maior parte da sua vida? Responda em três períodos: de 0 a 12 anos, de 13 a 18 anos, e de 18 anos em diante.","",0
-6,0,2,"Pessoas com quem você mora nasceram onde? Há sotaques diferentes em casa?","",0
-7,0,2,"Como você se identifica em termos de gênero? (Masculino, Feminino, Não-binário, Prefere não informar, Outro)","",0
-8,0,2,"Você está com resfriado, rouquidão ou algo que possa afetar sua voz hoje?","",0
-9,1,2,"O gato subiu no telhado.","",1
-10,1,2,"Que horas são agora?","",1
-11,1,2,"A reunião foi adiada para a próxima semana.","",1
-12,1,2,"Preciso comprar pão e leite no mercado.","",1
-13,1,2,"O filme começou às oito da noite.","",1
-14,1,2,"Ela trabalha em um escritório de advocacia.","",1
-15,1,2,"A importância da educação para o desenvolvimento social e econômico de uma nação é inegável.","",1
-16,1,2,"Os pesquisadores concluíram que a vacina experimental demonstrou resultados promissores na prevenção de novas infecções.","",1
-17,1,2,"Você gostaria de café ou chá?","",1
-18,1,2,"O trânsito estava congestionado por causa de um acidente na rodovia.","",1
-19,1,2,"Que notícia incrível!","",1
-20,1,2,"Vamos começar o projeto agora mesmo!","",1
-21,1,2,"Você não vai acreditar no que aconteceu.","",1
-22,1,2,"Isso é fantástico!","",1
-23,1,2,"Todos estão muito animados com o resultado.","",1
-24,1,2,"Essa situação é muito injusta com os bichinhos.","",1
-25,1,2,"Muitas animais sofrem sem culpa nenhuma.","",1
-26,1,2,"É difícil ver tanta crueldade no mundo.","",1
-27,1,2,"Que alegria ver esse animal recebendo uma segunda chance.","",1
-28,1,2,"Resgates assim restauram minha fé na humanidade.","",1
-29,1,2,"Histórias de esperança como essa me inspiram demais.","",1
-30,1,2,"Isso mostra o poder que temos de transformar nossas vidas.","",1
-31,1,2,"Quando nos dedicamos, conseguimos alcançar qualquer objetivo.","",1
-32,1,2,"Histórias assim me motivam a ser uma pessoa melhor.","",1
+0,1,2,"Leia as frases em voz alta.","",1
+1,1,2,"O gato subiu no telhado.","",1
+2,1,2,"Que horas são 13 horas","",1
+3,1,2,"A reunião foi adiada para a próxima semana.","",1
+4,1,2,"Preciso comprar pão e leite no mercado.","",1
+5,1,2,"O filme começou às oito da noite.","",1
+6,1,2,"Ela trabalha em um escritório de advocacia.","",1
+7,1,2,"A importância da educação para o desenvolvimento social e econômico de uma nação é inegável.","",1
+8,1,2,"Os pesquisadores concluíram que a vacina experimental demonstrou resultados promissores na prevenção de novas infecções.","",1
+9,1,2,"Você gostaria de café ou chá?","",1
+10,1,2,"O trânsito estava congestionado por causa de um acidente na rodovia.","",1
+11,1,2,"Que notícia incrível!","",1
+12,1,2,"Vamos começar o projeto agora mesmo!","",1
+13,1,2,"Você não vai acreditar no que aconteceu.","",1
+14,1,2,"Isso é fantástico!","",1
+15,1,2,"Todos estão muito animados com o resultado.","",1
+16,1,2,"Essa situação é muito injusta com os bichinhos.","",1
+17,1,2,"Muitas animais sofrem sem culpa nenhuma.","",1
+18,1,2,"É difícil ver tanta crueldade no mundo.","",1
+19,1,2,"Que alegria ver esse animal recebendo uma segunda chance.","",1
+20,1,2,"Resgates assim restauram minha fé na humanidade.","",1
+21,1,2,"Histórias de esperança como essa me inspiram demais.","",1
+22,1,2,"Isso mostra o poder que temos de transformar nossas vidas.","",1
+23,1,2,"Quando nos dedicamos, conseguimos alcançar qualquer objetivo.","",1
+24,1,2,"Histórias assim me motivam a ser uma pessoa melhor.","",1
+25,1,1,"O céu está azul hoje.","",1
+26,1,1,"Obrigado pela sua ajuda.","",1
+27,1,3,"Estou muito feliz com a notícia!","",1
+28,1,3,"Que dia triste.","",1

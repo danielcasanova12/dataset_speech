@@ -99,9 +99,10 @@ const RecordingPage: React.FC = () => {
   const [consentModalOpen, setConsentModalOpen] = useState(true);
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
   const [tooltipConfig, setTooltipConfig] = useState<{ open: boolean; text: string; top: number; left: number; arrowTop?: string | number; }>({ open: false, text: '', top: 0, left: 0 });
-  const [currentCsvFile, setCurrentCsvFile] = useState('phrases.csv');
+  const [currentCsvFile, setCurrentCsvFile] = useState('apresentacao.csv');
   const [isTransitionModalOpen, setIsTransitionModalOpen] = useState(false);
   const [isPhraseVisible, setIsPhraseVisible] = useState(true);
+  const [transitionMessage, setTransitionMessage] = useState({ title: '', body: '' });
 
   // --- REFS ---
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -146,13 +147,18 @@ const RecordingPage: React.FC = () => {
             const values = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
             return {
                 id: parseInt(values[header.indexOf('id')] || '0'),
-                emocaoid: parseInt(values[header.indexOf('emocaoid')] || '0'),
-                datasetid: parseInt(values[header.indexOf('datasetid')] || '0'),
+                emocaoid: parseInt(values[header.indexOf('emocaoId')] || '0'),
+                datasetid: parseInt(values[header.indexOf('datasetId')] || '0'),
                 text: values[header.indexOf('text')]?.replace(/"/g, '') || '',
                 videoSrc: values[header.indexOf('videoSrc')]?.replace(/"/g, '') || undefined,
             };
         });
-        const filteredPhrases = phraseData.filter(p => p.datasetid.toString() === datasetId);
+        
+        let filteredPhrases = phraseData;
+        if (currentCsvFile !== 'apresentacao.csv') {
+          filteredPhrases = phraseData.filter(p => p.datasetid.toString() === datasetId);
+        }
+
         const uniquePhrases = filteredPhrases.filter((phrase, index, self) =>
           index === self.findIndex(p =>
             p.text === phrase.text &&
@@ -287,9 +293,13 @@ const RecordingPage: React.FC = () => {
         setAudioChunks([]);
       });
     } else {
-      if (currentCsvFile === 'phrases.csv') {
+      if (currentCsvFile === 'apresentacao.csv') {
+        setTransitionMessage({
+          title: 'Você concluiu a apresentação!',
+          body: 'Agora vamos para a parte de leitura de frases.'
+        });
         setIsTransitionModalOpen(true);
-      } else {
+      } else { // This will be phrases_leitura.csv
         setOpenFinishModal(true);
       }
     }
@@ -304,9 +314,13 @@ const RecordingPage: React.FC = () => {
         setAudioChunks([]);
       });
     } else {
-      if (currentCsvFile === 'phrases.csv') {
+      if (currentCsvFile === 'apresentacao.csv') {
+        setTransitionMessage({
+          title: 'Você concluiu a apresentação!',
+          body: 'Agora vamos para a parte de leitura de frases.'
+        });
         setIsTransitionModalOpen(true);
-      } else {
+      } else { // This will be phrases_leitura.csv
         setOpenFinishModal(true);
       }
     }
@@ -330,7 +344,9 @@ const RecordingPage: React.FC = () => {
 
   const handleContinueToNextPart = () => {
     setIsTransitionModalOpen(false);
-    setCurrentCsvFile('phrases_leitura.csv');
+    if (currentCsvFile === 'apresentacao.csv') {
+      setCurrentCsvFile('phrases_leitura.csv');
+    }
     setCurrentPhraseIndex(0);
     setTutorialStep(0); // Reinicia o tutorial para a segunda parte
   }
@@ -538,9 +554,9 @@ const RecordingPage: React.FC = () => {
       <Modal open={isCountdownModalOpen}><Box sx={modalStyle}><Typography variant="h1" textAlign="center">{countdown}</Typography></Box></Modal>
       <Modal open={isTransitionModalOpen}>
         <Box sx={modalStyle}>
-          <Typography variant="h6" component="h2" textAlign="center">Parabéns, você concluiu a primeira parte!</Typography>
+          <Typography variant="h6" component="h2" textAlign="center">{transitionMessage.title}</Typography>
           <Typography sx={{ mt: 2, textAlign: 'center' }}>
-            Agora vamos para a segunda. Nesta parte, você apenas precisa ler as frases que aparecerão na tela.
+            {transitionMessage.body}
           </Typography>
           <Box mt={3} display="flex" justifyContent="center">
             <Button onClick={handleContinueToNextPart} variant="contained">Continuar</Button>
