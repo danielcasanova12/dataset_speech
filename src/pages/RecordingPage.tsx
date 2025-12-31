@@ -30,6 +30,56 @@ const modalStyle = {
   width: 400, bgcolor: 'background.paper', border: '2px solid #000', boxShadow: 24, p: 4,
 };
 
+const uploadAudio = async (audioBlob: Blob, metadata: any) => {
+  const formData = new FormData();
+
+  // Sanitize the MIME type by removing the ';codecs=...' part.
+  const sanitizedType = audioBlob.type.split(';')[0];
+  const sanitizedBlob = new Blob([audioBlob], { type: sanitizedType });
+
+  formData.append("audio", sanitizedBlob, `recording.${metadata.format || 'webm'}`);
+  formData.append("userId", metadata.userId);
+  formData.append("sessionId", metadata.sessionId);
+  formData.append("datasetId", metadata.datasetId);
+  formData.append("phraseId", metadata.phraseId);
+  formData.append("duration", metadata.duration);
+  formData.append("recordedAt", metadata.recordedAt);
+  if (metadata.emotionId) {
+    formData.append("emotionId", metadata.emotionId);
+  }
+  formData.append("format", metadata.format || 'webm');
+  formData.append("deviceInfo", JSON.stringify({
+    userAgent: navigator.userAgent
+  }));
+
+  const credentials = btoa("admin:admin");
+
+  try {
+    const response = await fetch("http://127.0.0.1:8000/api/v1/recordings", {
+      method: "POST",
+      headers: {
+        "Authorization": `Basic ${credentials}`,
+        "Accept": "application/json",
+      },
+      body: formData
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error(`Error ${response.status}:`, errorData.detail);
+      throw new Error(`API Error: ${errorData.detail}`);
+    }
+
+    const result = await response.json();
+    console.log("Upload successful:", result);
+    return result;
+  } catch (error) {
+    console.error("An error occurred during the upload:", error);
+    throw error;
+  }
+};
+
+
 const TutorialTooltip: React.FC<{ text: string; top: number; left: number; onNext: () => void; arrowTop?: string | number; }> = ({
   text,
   top,
@@ -103,12 +153,21 @@ const RecordingPage: React.FC = () => {
   const [isTransitionModalOpen, setIsTransitionModalOpen] = useState(false);
   const [isPhraseVisible, setIsPhraseVisible] = useState(true);
   const [transitionMessage, setTransitionMessage] = useState({ title: '', body: '' });
+  const [micPermissionStatus, setMicPermissionStatus] = useState<'idle' | 'pending' | 'granted' | 'denied'>('idle');
+  const [isMicErrorModalOpen, setIsMicErrorModalOpen] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [sessionId] = useState(() => `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
+
 
   // --- REFS ---
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const recordingStartTimeRef = useRef<number>(0); // For precise duration
   const animationFrameId = useRef<number | null>(null);
   const timerIntervalId = useRef<NodeJS.Timeout | null>(null);
   const phraseTextRef = useRef<HTMLElement>(null);
@@ -127,6 +186,24 @@ const RecordingPage: React.FC = () => {
   // --- NAVIGATION & PARAMS ---
   const navigate = useNavigate();
   const { datasetId } = useParams<{ datasetId: string }>();
+
+  // --- PERMISSION HANDLER ---
+  const requestMicPermission = async () => {
+    setMicPermissionStatus('pending');
+    setIsMicErrorModalOpen(false); // Close modal when trying again
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(track => track.stop()); // Stop tracks immediately
+      setMicPermissionStatus('granted');
+      setTutorialStep(0); // Proceed to tutorial
+      return true;
+    } catch (err) {
+      console.error("Microphone permission denied:", err);
+      setMicPermissionStatus('denied');
+      setIsMicErrorModalOpen(true);
+      return false;
+    }
+  };
 
   // --- EFFECTS ---
   useEffect(() => {
@@ -237,7 +314,7 @@ const RecordingPage: React.FC = () => {
   // --- HANDLERS ---
   const handleAcceptConsent = () => {
     setConsentModalOpen(false);
-    setTutorialStep(0);
+    requestMicPermission();
   };
   const handleDeclineConsent = () => navigate('/');
   const handleNextTutorialStep = () => {
@@ -284,14 +361,56 @@ const RecordingPage: React.FC = () => {
     }
   };
 
-  const handleNextPhrase = () => {
-    if (isRecording) stopRecording();
+  const stopRecording = (): Promise<Blob> => {
+    return new Promise(resolve => {
+      if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') {
+        resolve(new Blob());
+        return;
+      }
+  
+      mediaRecorderRef.current.onstop = () => {
+        const originalType = audioChunks[0]?.type || 'audio/webm';
+        const sanitizedType = originalType.split(';')[0];
+        const blob = new Blob(audioChunks, { type: sanitizedType });
+        
+        if (sourceRef.current) {
+          sourceRef.current.disconnect();
+          sourceRef.current = null;
+        }
+  
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((track: MediaStreamTrack) => track.stop());
+          streamRef.current = null;
+        }
+
+        // Aggressively clean up the audio context and analyser
+        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+            audioContextRef.current.close();
+        }
+        audioContextRef.current = null;
+        analyserRef.current = null;
+  
+        resolve(blob);
+      };
+  
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    });
+  };
+
+  const triggerNextPhrase = async () => {
     if (currentPhraseIndex < phrases.length - 1) {
       const nextIndex = currentPhraseIndex + 1;
-      triggerPhraseAction(nextIndex, () => {
-        setCurrentPhraseIndex(nextIndex);
-        setAudioChunks([]);
-      });
+      setCurrentPhraseIndex(nextIndex);
+      
+      const nextPhrase = phrases[nextIndex];
+      if (nextPhrase && !nextPhrase.videoSrc) {
+        setIsCountdownModalOpen(true);
+        // Use a simple promise for delay to keep flow linear
+        await new Promise(res => setTimeout(res, 3000));
+        setIsCountdownModalOpen(false);
+        await startRecording();
+      }
     } else {
       if (currentCsvFile === 'apresentacao.csv') {
         setTransitionMessage({
@@ -299,47 +418,83 @@ const RecordingPage: React.FC = () => {
           body: 'Agora vamos para a parte de leitura de frases.'
         });
         setIsTransitionModalOpen(true);
-      } else { // This will be phrases_leitura.csv
+      } else {
         setOpenFinishModal(true);
       }
+    }
+  };
+
+  const handleNextPhrase = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    try {
+      if (isRecording) {
+        const durationInSeconds = (performance.now() - recordingStartTimeRef.current) / 1000;
+        const audioBlob = await stopRecording();
+
+        if (audioBlob.size > 0) {
+          setIsUploading(true);
+          setUploadStatus('idle');
+          try {
+            const mimeType = audioBlob.type;
+            const format = mimeType.split('/')[1]?.split(';')[0] || 'webm';
+            const metadata = {
+              userId: "admin",
+              sessionId: sessionId,
+              datasetId: datasetId,
+              phraseId: currentPhrase.id,
+              duration: durationInSeconds,
+              recordedAt: new Date().toISOString(),
+              emotionId: currentPhrase.emocaoid,
+              format: format,
+            };
+            await uploadAudio(audioBlob, metadata);
+            setUploadStatus('success');
+          } catch (error) {
+            setUploadStatus('error');
+          } finally {
+            setIsUploading(false);
+          }
+        }
+      }
+
+      await triggerNextPhrase();
+    } finally {
+      setIsProcessing(false);
     }
   };
   
-  const handleIgnoreAndGoNext = () => {
-    if (isRecording) stopRecording();
-    if (currentPhraseIndex < phrases.length - 1) {
-      const nextIndex = currentPhraseIndex + 1;
-      triggerPhraseAction(nextIndex, () => {
-        setCurrentPhraseIndex(nextIndex);
-        setAudioChunks([]);
-      });
-    } else {
-      if (currentCsvFile === 'apresentacao.csv') {
-        setTransitionMessage({
-          title: 'Você concluiu a apresentação!',
-          body: 'Agora vamos para a parte de leitura de frases.'
-        });
-        setIsTransitionModalOpen(true);
-      } else { // This will be phrases_leitura.csv
-        setOpenFinishModal(true);
+  const handleIgnoreAndGoNext = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    try {
+      if (isRecording) {
+        await stopRecording();
       }
+      await triggerNextPhrase();
+    } finally {
+      setIsProcessing(false);
     }
   };
 
-  const handlePreviousPhrase = () => {
-    if (isRecording) stopRecording();
-    if (currentPhraseIndex > 0) {
-      const prevIndex = currentPhraseIndex - 1;
-      triggerPhraseAction(prevIndex, () => {
-        setCurrentPhraseIndex(prevIndex);
-        setAudioChunks([]);
-      });
-    }
+  const handlePreviousPhrase = async () => {
+    // This is complex to implement correctly with the new sequential flow.
+    // For now, we disable it to ensure stability. A proper implementation
+    // would need to handle state rollback carefully.
+    console.warn("Previous phrase functionality is currently disabled.");
   };
 
-  const handleReplayVideo = () => {
-    if (isRecording) stopRecording();
-    if (hasVideo) playVideo();
+  const handleReplayVideo = async () => {
+    if (isProcessing || !hasVideo) return;
+    setIsProcessing(true);
+    try {
+      if (isRecording) {
+        await stopRecording();
+      }
+      playVideo();
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleContinueToNextPart = () => {
@@ -348,31 +503,51 @@ const RecordingPage: React.FC = () => {
       setCurrentCsvFile('phrases_leitura.csv');
     }
     setCurrentPhraseIndex(0);
-    setTutorialStep(0); // Reinicia o tutorial para a segunda parte
-  }
-
-  const startRecording = async () => {
-    try {
-      if (!audioContextRef.current) audioContextRef.current = new AudioContext();
-      if (!analyserRef.current) analyserRef.current = audioContextRef.current.createAnalyser();
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      sourceRef.current = audioContextRef.current.createMediaStreamSource(stream);
-      sourceRef.current.connect(analyserRef.current);
-      mediaRecorderRef.current = new MediaRecorder(stream);
-      mediaRecorderRef.current.ondataavailable = (event) => setAudioChunks((prev) => [...prev, event.data]);
-      mediaRecorderRef.current.start();
-      setIsRecording(true);
-      setTimer(0);
-    } catch (err) {
-      console.error("Failed to start recording:", err);
-    }
+    setTutorialStep(0);
   };
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      if (sourceRef.current) sourceRef.current.disconnect();
+  const startRecording = async () => {
+    setAudioChunks([]); // Clear previous audio data before starting
+    try {
+      // Ensure all previous instances are stopped and cleaned up.
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+        mediaRecorderRef.current.stop();
+      }
+
+      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+        audioContextRef.current = new AudioContext();
+      }
+      if (!analyserRef.current) {
+        analyserRef.current = audioContextRef.current.createAnalyser();
+      }
+      
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+  
+      sourceRef.current = audioContextRef.current.createMediaStreamSource(stream);
+      sourceRef.current.connect(analyserRef.current);
+      
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          setAudioChunks((prev) => [...prev, event.data]);
+        }
+      };
+
+      recorder.start(250);
+      recordingStartTimeRef.current = performance.now();
+      setIsRecording(true);
+      setTimer(0);
+
+    } catch (err) {
+      console.error("Failed to start recording:", err);
+      setMicPermissionStatus('denied');
+      setIsMicErrorModalOpen(true);
     }
   };
 
@@ -481,7 +656,6 @@ const RecordingPage: React.FC = () => {
       <Box sx={{
         filter: isTutorialActive ? 'brightness(0.7)' : 'none',
         transition: 'filter 0.3s',
-        // Animação de "brilho" para o tutorial
         '@keyframes tutorial-glow': {
           '0%': { boxShadow: '0 0 0 0px rgba(25, 118, 210, 0.7)' },
           '70%': { boxShadow: '0 0 10px 10px rgba(25, 118, 210, 0)' },
@@ -489,8 +663,8 @@ const RecordingPage: React.FC = () => {
         },
         '.tutorial-highlight': {
           animation: 'tutorial-glow 1.5s infinite',
-          borderRadius: '8px', // Deixa o brilho mais bonito nos cantos
-          zIndex: 1301, // Garante que o brilho fique acima do fundo escurecido
+          borderRadius: '8px',
+          zIndex: 1301,
           position: 'relative',
         }
       }}>
@@ -504,7 +678,7 @@ const RecordingPage: React.FC = () => {
               <CardContent>
                 <Box display="flex" alignItems="center" mb={1}>
                   {isRecording && <FiberManualRecordIcon sx={{ color: 'red', animation: 'blinking 1s infinite' }} />}
-                  <Typography variant="h6" sx={{ ml: 1 }}>{isRecording ? 'Gravando...' : isVideoPlaying ? 'Reproduzindo Vídeo...' : 'Pronto'}</Typography>
+                  <Typography variant="h6" sx={{ ml: 1 }}>{isRecording ? 'Gravando...' : isUploading ? 'Enviando...' : isVideoPlaying ? 'Reproduzindo Vídeo...' : 'Pronto'}</Typography>
                   <Box flexGrow={1} />
                   <Typography variant="h6" sx={{ color: getDbfsColor(dbfs), mr: 2, fontWeight: 'bold' }}>
                     {isRecording && isFinite(dbfs) ? `${dbfs.toFixed(2)} dBFS` : ''}
@@ -531,13 +705,10 @@ const RecordingPage: React.FC = () => {
                   {isPhraseVisible ? currentPhrase?.text : ''}
                 </Typography>
                 <Box mt={4} display="flex" justifyContent="space-around" alignItems="center">
-                  {/* <Button variant="outlined" onClick={handlePreviousPhrase} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen || currentPhraseIndex === 0}>
-                    Frase Anterior
-                  </Button> */}
-                  {hasVideo && <Button variant="outlined" color="info" onClick={handleReplayVideo} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen}>Repetir Vídeo</Button>}                  
-                  <Button ref={ignoreButtonRef} variant="outlined" color="secondary" onClick={handleIgnoreAndGoNext} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen}>Ignorar Áudio</Button>
-                  <Button ref={saveButtonRef} variant="contained" color="primary" onClick={handleNextPhrase} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen}>
-                    {currentPhraseIndex < phrases.length - 1 ? 'Salvar e Próxima' : 'Finalizar'}
+                  {hasVideo && <Button variant="outlined" color="info" onClick={handleReplayVideo} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen || isUploading || isProcessing}>Repetir Vídeo</Button>}                  
+                  <Button ref={ignoreButtonRef} variant="outlined" color="secondary" onClick={handleIgnoreAndGoNext} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen || isUploading || isProcessing}>Ignorar Áudio</Button>
+                  <Button ref={saveButtonRef} variant="contained" color="primary" onClick={handleNextPhrase} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen || isUploading || isProcessing}>
+                    {isUploading ? <CircularProgress size={24} color="inherit" /> : (currentPhraseIndex < phrases.length - 1 ? 'Salvar e Próxima' : 'Finalizar')}
                   </Button>
                 </Box>
               </CardContent>
@@ -568,6 +739,23 @@ const RecordingPage: React.FC = () => {
           <Typography variant="h6" component="h2" textAlign="center">Sessão Finalizada!</Typography>
           <Box mt={2} display="flex" justifyContent="center">
             <Button component={Link} to="/">Voltar para a Home</Button>
+          </Box>
+        </Box>
+      </Modal>
+      <Modal open={isMicErrorModalOpen}>
+        <Box sx={modalStyle}>
+          <Typography variant="h6" component="h2" textAlign="center">Acesso ao Microfone Bloqueado</Typography>
+          <Typography sx={{ mt: 2, textAlign: 'center' }}>
+            Para continuar, você precisa permitir o acesso ao microfone.
+          </Typography>
+          <Typography sx={{ mt: 2, textAlign: 'center' }}>
+            Clique no ícone de cadeado 🔒 na barra de endereço do seu navegador, encontre a configuração do Microfone e mude para "Permitir".
+          </Typography>
+          <Typography sx={{ mt: 2, textAlign: 'center' }}>
+            Depois de permitir, recarregue a página.
+          </Typography>
+          <Box mt={3} display="flex" justifyContent="center">
+            <Button onClick={() => window.location.reload()} variant="contained">Recarregar a Página</Button>
           </Box>
         </Box>
       </Modal>
