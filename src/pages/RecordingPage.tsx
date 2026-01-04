@@ -33,6 +33,16 @@ const modalStyle = {
 const uploadAudio = async (audioBlob: Blob, metadata: any) => {
   const formData = new FormData();
 
+  const apiBaseUrl = process.env.REACT_APP_API_BASE_URL;
+  const apiUser = process.env.REACT_APP_API_USER;
+  const apiPassword = process.env.REACT_APP_API_PASSWORD;
+
+  if (!apiBaseUrl || !apiUser || !apiPassword) {
+    const errorMsg = "API configuration is missing. Please check your .env file.";
+    console.error(errorMsg);
+    throw new Error(errorMsg);
+  }
+
   // Sanitize the MIME type by removing the ';codecs=...' part.
   const sanitizedType = audioBlob.type.split(';')[0];
   const sanitizedBlob = new Blob([audioBlob], { type: sanitizedType });
@@ -52,10 +62,11 @@ const uploadAudio = async (audioBlob: Blob, metadata: any) => {
     userAgent: navigator.userAgent
   }));
 
-  const credentials = btoa("admin:admin");
+  const credentials = btoa(`${apiUser}:${apiPassword}`);
+  const apiUrl = `${apiBaseUrl}/api/v1/recordings`;
 
   try {
-    const response = await fetch("http://127.0.0.1:8000/api/v1/recordings", {
+    const response = await fetch(apiUrl, {
       method: "POST",
       headers: {
         "Authorization": `Basic ${credentials}`,
