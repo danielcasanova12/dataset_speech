@@ -28,3 +28,5 @@ firebase.json
 .github/workflows/firebase-hosting-pull-request.yml
 api_blueprint.md
 API_DOCS.md
+public/manual.md
+.firebase/hosting.YnVpbGQ.cache

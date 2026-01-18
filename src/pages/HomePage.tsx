@@ -12,6 +12,40 @@ const HomePage: React.FC = () => {
   const [datasets, setDatasets] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const testApi = async () => {
+    try {
+      const apiBaseUrl = process.env.REACT_APP_API_BASE_URL;
+      const apiUser = process.env.REACT_APP_API_USER;
+      const apiPassword = process.env.REACT_APP_API_PASSWORD;
+
+      if (!apiBaseUrl || !apiUser || !apiPassword) {
+        alert("API configuration is missing. Please check your .env file.");
+        return;
+      }
+
+      const credentials = btoa(`${apiUser}:${apiPassword}`);
+      const apiUrl = `${apiBaseUrl}/`;
+
+      const response = await fetch(apiUrl, {
+        method: "GET",
+        headers: {
+          "Authorization": `Basic ${credentials}`,
+          "Accept": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        alert(`API test successful! Response: ${JSON.stringify(data)}`);
+      } else {
+        alert(`API test failed with status: ${response.status}`);
+      }
+    } catch (error) {
+      console.error("API test error:", error);
+      alert("An error occurred during the API test. Check the console for details.");
+    }
+  };
+
   useEffect(() => {
     const fetchDatasets = async () => {
       try {
@@ -85,6 +119,9 @@ const HomePage: React.FC = () => {
             ))}
           </Grid>
         )}
+        <Button variant="contained" color="secondary" onClick={testApi} sx={{ mt: 2 }}>
+          Test API
+        </Button>
       </Box>
     </Container>
   );

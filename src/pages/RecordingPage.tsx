@@ -342,36 +342,6 @@ const RecordingPage: React.FC = () => {
 
   const isTutorialActive = tutorialStep !== null;
 
-  const triggerPhraseAction = (index: number, onReady: () => void) => {
-    const phrase = phrases[index];
-    if (!phrase) return;
-
-    const finalizeTransition = () => {
-      onReady();
-      if (!phrase.videoSrc) {
-        startRecording();
-      }
-    };
-
-    if (!phrase.videoSrc) {
-      setIsVideoPlaying(false);
-      setCountdown(3);
-      setIsCountdownModalOpen(true);
-      const countdownTimer = setInterval(() => {
-        setCountdown(prev => {
-          if (prev > 1) return prev - 1;
-          clearInterval(countdownTimer);
-          setIsCountdownModalOpen(false);
-          finalizeTransition();
-          return 0;
-        });
-      }, 1000);
-    } else {
-      setIsCountdownModalOpen(false);
-      finalizeTransition();
-    }
-  };
-
   const stopRecording = (): Promise<Blob> => {
     return new Promise(resolve => {
       if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') {
@@ -413,13 +383,26 @@ const RecordingPage: React.FC = () => {
     if (currentPhraseIndex < phrases.length - 1) {
       const nextIndex = currentPhraseIndex + 1;
       setCurrentPhraseIndex(nextIndex);
-      
+
       const nextPhrase = phrases[nextIndex];
       if (nextPhrase && !nextPhrase.videoSrc) {
+        setCountdown(3);
         setIsCountdownModalOpen(true);
-        // Use a simple promise for delay to keep flow linear
-        await new Promise(res => setTimeout(res, 3000));
-        setIsCountdownModalOpen(false);
+
+        await new Promise<void>((resolve) => {
+          const countdownTimer = setInterval(() => {
+            setCountdown((prev) => {
+              if (prev > 1) {
+                return prev - 1;
+              }
+              clearInterval(countdownTimer);
+              setIsCountdownModalOpen(false);
+              resolve();
+              return 0;
+            });
+          }, 1000);
+        });
+
         await startRecording();
       }
     } else {
