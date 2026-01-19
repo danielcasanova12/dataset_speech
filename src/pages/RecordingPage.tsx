@@ -3,6 +3,7 @@ import { Button, Typography, Container, Paper, Box, Modal, Card, CardContent, Ci
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import ConsentScreen from '../components/ConsentScreen';
+import UserInfoForm, { UserInfo } from '../components/UserInfoForm';
 
 const datasetNames: { [key: number]: string } = {
   1: "Dataset voz geral",
@@ -30,7 +31,7 @@ const modalStyle = {
   width: 400, bgcolor: 'background.paper', border: '2px solid #000', boxShadow: 24, p: 4,
 };
 
-const uploadAudio = async (audioBlob: Blob, metadata: any) => {
+const uploadAudio = async (audioBlob: Blob, metadata: any, userInfo: UserInfo | null) => {
   const formData = new FormData();
 
   const apiBaseUrl = process.env.REACT_APP_API_BASE_URL;
@@ -62,6 +63,14 @@ const uploadAudio = async (audioBlob: Blob, metadata: any) => {
     userAgent: navigator.userAgent
   }));
 
+  // Add user info to the form data
+  if (userInfo) {
+    formData.append("userGender", userInfo.gender);
+    formData.append("userAge", userInfo.age);
+    formData.append("userBirthState", userInfo.birthState);
+    formData.append("userCurrentState", userInfo.currentState);
+  }
+
   const credentials = btoa(`${apiUser}:${apiPassword}`);
   const apiUrl = `${apiBaseUrl}/api/v1/recordings`;
 
@@ -91,11 +100,12 @@ const uploadAudio = async (audioBlob: Blob, metadata: any) => {
 };
 
 
-const TutorialTooltip: React.FC<{ text: string; top: number; left: number; onNext: () => void; arrowTop?: string | number; }> = ({
+const TutorialTooltip: React.FC<{ text: string; top: number; left: number; onNext: () => void; onSkip: () => void; arrowTop?: string | number; }> = ({
   text,
   top,
   left,
   onNext,
+  onSkip,
   arrowTop = '50%',
 }) => (
   <Box
@@ -112,7 +122,7 @@ const TutorialTooltip: React.FC<{ text: string; top: number; left: number; onNex
       sx={{
         position: 'relative',
         p: 2,
-        maxWidth: 260,
+        width: 260,
         bgcolor: 'background.paper',
         borderRadius: 2,
       }}
@@ -120,9 +130,12 @@ const TutorialTooltip: React.FC<{ text: string; top: number; left: number; onNex
       <Typography variant="body2" sx={{ mb: 2 }}>
         {text}
       </Typography>
-      <Button onClick={onNext} variant="contained" size="small">
-        Próximo
-      </Button>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Button onClick={onSkip} size="small">Pular</Button>
+        <Button onClick={onNext} variant="contained" size="small">
+          Próximo
+        </Button>
+      </Box>
 
       {/* Seta azul apontando para a ESQUERDA */}
       <Box
@@ -157,7 +170,7 @@ const RecordingPage: React.FC = () => {
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [isInitialPlayback, setIsInitialPlayback] = useState(false);
   const [countdown, setCountdown] = useState(3);
-  const [consentModalOpen, setConsentModalOpen] = useState(true);
+  const [consentModalOpen, setConsentModalOpen] = useState(false);
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
   const [tooltipConfig, setTooltipConfig] = useState<{ open: boolean; text: string; top: number; left: number; arrowTop?: string | number; }>({ open: false, text: '', top: 0, left: 0 });
   const [currentCsvFile, setCurrentCsvFile] = useState('apresentacao.csv');
@@ -169,7 +182,10 @@ const RecordingPage: React.FC = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [sessionId] = useState(() => `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isSessionResumed, setIsSessionResumed] = useState(false);
+  const [isUserInfoModalOpen, setIsUserInfoModalOpen] = useState(false);
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
 
 
   // --- REFS ---
@@ -187,7 +203,7 @@ const RecordingPage: React.FC = () => {
   const timerRef = useRef<HTMLElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ignoreButtonRef = useRef<HTMLButtonElement>(null);
-  const homeButtonRef = useRef<HTMLAnchorElement>(null);
+  const homeButtonRef = useRef<HTMLButtonElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const currentPhrase = phrases[currentPhraseIndex];
@@ -218,8 +234,58 @@ const RecordingPage: React.FC = () => {
 
   // --- EFFECTS ---
   useEffect(() => {
-    setConsentModalOpen(true);
-  }, []);
+    // --- Gerenciador de Sessão ---
+    let storedSessionId = localStorage.getItem('recordingSessionId');
+    if (!storedSessionId) {
+      storedSessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      localStorage.setItem('recordingSessionId', storedSessionId);
+    }
+    setSessionId(storedSessionId);
+
+    // --- Gerenciador de Consentimento ---
+    const consentGiven = localStorage.getItem(`consent_given_for_${storedSessionId}`);
+    if (!consentGiven) {
+      setConsentModalOpen(true);
+    }
+
+    // --- Gerenciador de Informações do Usuário ---
+    const storedUserInfo = localStorage.getItem(`userInfo_for_${storedSessionId}`);
+    if (storedUserInfo) {
+      setUserInfo(JSON.parse(storedUserInfo));
+    }
+
+    // --- Restaurador de Progresso ---
+    const savedProgressJSON = localStorage.getItem('recordingProgress');
+    if (savedProgressJSON) {
+      const savedProgress = JSON.parse(savedProgressJSON);
+      
+      // Só restaura se o progresso salvo for para o dataset que estamos abrindo
+      if (savedProgress.datasetId === datasetId) {
+        if (savedProgress.currentPhraseIndex > 0) {
+          console.log('Progresso encontrado! Restaurando para a frase:', savedProgress.currentPhraseIndex);
+          setCurrentPhraseIndex(savedProgress.currentPhraseIndex);
+          setCurrentCsvFile(savedProgress.currentCsvFile || 'apresentacao.csv');
+          setIsSessionResumed(true);
+        } else {
+          // Se o progresso salvo for para o início, apenas carrega sem mostrar o botão de continuar.
+          setCurrentPhraseIndex(0);
+          setCurrentCsvFile(savedProgress.currentCsvFile || 'apresentacao.csv');
+        }
+      }
+    }
+  }, [datasetId]);
+
+  useEffect(() => {
+    // Não salva o progresso para o índice 0, pois ele pode ser o estado inicial ou restaurado
+    if (sessionId && datasetId && phrases.length > 0 && currentPhraseIndex > 0) {
+      const progress = {
+        datasetId: datasetId,
+        currentPhraseIndex: currentPhraseIndex,
+        currentCsvFile: currentCsvFile,
+      };
+      localStorage.setItem('recordingProgress', JSON.stringify(progress));
+    }
+  }, [currentPhraseIndex, sessionId, datasetId, currentCsvFile, phrases.length]);
 
   useEffect(() => {
     if (!datasetId) return;
@@ -324,9 +390,33 @@ const RecordingPage: React.FC = () => {
 
   // --- HANDLERS ---
   const handleAcceptConsent = () => {
+    if (sessionId) {
+      localStorage.setItem(`consent_given_for_${sessionId}`, 'true');
+    }
     setConsentModalOpen(false);
+
+    // Se já temos a info do usuário (do localStorage), não pergunta de novo.
+    if (userInfo) {
+      requestMicPermission();
+    } else {
+      setIsUserInfoModalOpen(true);
+    }
+  };
+
+  const handleUserInfoSubmit = (data: UserInfo) => {
+    setUserInfo(data);
+    if (sessionId) {
+      localStorage.setItem(`userInfo_for_${sessionId}`, JSON.stringify(data));
+    }
+    setIsUserInfoModalOpen(false);
     requestMicPermission();
   };
+
+  const handleSkipTutorial = () => {
+    setTutorialStep(null);
+    handleNextPhrase();
+  };
+
   const handleDeclineConsent = () => navigate('/');
   const handleNextTutorialStep = () => {
     const isReadingPart = currentCsvFile === 'phrases_leitura.csv';
@@ -379,6 +469,27 @@ const RecordingPage: React.FC = () => {
     });
   };
 
+  const startCountdownAndRecording = async () => {
+    setCountdown(3);
+    setIsCountdownModalOpen(true);
+
+    await new Promise<void>((resolve) => {
+      const countdownTimer = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev > 1) {
+            return prev - 1;
+          }
+          clearInterval(countdownTimer);
+          setIsCountdownModalOpen(false);
+          resolve();
+          return 0;
+        });
+      }, 1000);
+    });
+
+    await startRecording();
+  };
+
   const triggerNextPhrase = async () => {
     if (currentPhraseIndex < phrases.length - 1) {
       const nextIndex = currentPhraseIndex + 1;
@@ -386,24 +497,7 @@ const RecordingPage: React.FC = () => {
 
       const nextPhrase = phrases[nextIndex];
       if (nextPhrase && !nextPhrase.videoSrc) {
-        setCountdown(3);
-        setIsCountdownModalOpen(true);
-
-        await new Promise<void>((resolve) => {
-          const countdownTimer = setInterval(() => {
-            setCountdown((prev) => {
-              if (prev > 1) {
-                return prev - 1;
-              }
-              clearInterval(countdownTimer);
-              setIsCountdownModalOpen(false);
-              resolve();
-              return 0;
-            });
-          }, 1000);
-        });
-
-        await startRecording();
+        await startCountdownAndRecording();
       }
     } else {
       if (currentCsvFile === 'apresentacao.csv') {
@@ -414,6 +508,9 @@ const RecordingPage: React.FC = () => {
         setIsTransitionModalOpen(true);
       } else {
         setOpenFinishModal(true);
+        console.log('Sessão finalizada. Limpando progresso salvo.');
+        localStorage.removeItem('recordingSessionId');
+        localStorage.removeItem('recordingProgress');
       }
     }
   };
@@ -442,7 +539,7 @@ const RecordingPage: React.FC = () => {
               emotionId: currentPhrase.emocaoid,
               format: format,
             };
-            await uploadAudio(audioBlob, metadata);
+            await uploadAudio(audioBlob, metadata, userInfo);
             setUploadStatus('success');
           } catch (error) {
             setUploadStatus('error');
@@ -468,6 +565,16 @@ const RecordingPage: React.FC = () => {
       await triggerNextPhrase();
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleResumeSession = async () => {
+    setIsSessionResumed(false);
+    const phrase = phrases[currentPhraseIndex];
+    if (phrase && !phrase.videoSrc) {
+      await startCountdownAndRecording();
+    } else if (phrase && phrase.videoSrc) {
+      playVideo();
     }
   };
 
@@ -498,6 +605,17 @@ const RecordingPage: React.FC = () => {
     }
     setCurrentPhraseIndex(0);
     setTutorialStep(0);
+  };
+
+  const handleAbandonSession = () => {
+    const confirmation = window.confirm(
+      "Você tem certeza que quer abandonar a sessão? Seu progresso será perdido."
+    );
+    if (confirmation) {
+      localStorage.removeItem('recordingSessionId');
+      localStorage.removeItem('recordingProgress');
+      navigate('/');
+    }
   };
 
   const startRecording = async () => {
@@ -645,7 +763,12 @@ const RecordingPage: React.FC = () => {
   return (
     <Container maxWidth="lg">
       {consentModalOpen && <ConsentScreen onAccept={handleAcceptConsent} onDecline={handleDeclineConsent} />}
-      {tooltipConfig.open && <TutorialTooltip text={tooltipConfig.text} top={tooltipConfig.top} left={tooltipConfig.left} onNext={handleNextTutorialStep} arrowTop={tooltipConfig.arrowTop} />}
+      <UserInfoForm
+        open={isUserInfoModalOpen}
+        onSubmit={handleUserInfoSubmit}
+        onClose={() => setIsUserInfoModalOpen(false)}
+      />
+      {tooltipConfig.open && <TutorialTooltip text={tooltipConfig.text} top={tooltipConfig.top} left={tooltipConfig.left} onNext={handleNextTutorialStep} onSkip={handleSkipTutorial} arrowTop={tooltipConfig.arrowTop} />}
 
       <Box sx={{
         filter: isTutorialActive ? 'brightness(0.7)' : 'none',
@@ -662,12 +785,45 @@ const RecordingPage: React.FC = () => {
           position: 'relative',
         }
       }}>
-        <Typography variant="h3" component="h1" textAlign="center" sx={{ mt: 4, mb: 2 }}>
+        <Typography variant="h3" component="h1" textAlign="center" sx={{ mt: 4, mb: 1 }}>
           Gravação de Fala ({datasetId ? datasetNames[parseInt(datasetId, 10)] : ''})
         </Typography>
+        {sessionId && (
+          <Typography variant="subtitle1" color="text.secondary" textAlign="center" sx={{ mb: 2 }}>
+            ID da Sessão: {sessionId}
+          </Typography>
+        )}
 
         {phrases.length > 0 ? (
-          <Paper elevation={3} sx={{ p: 4, pointerEvents: isTutorialActive ? 'none' : 'auto' }}>
+          <Paper elevation={3} sx={{ p: 4, pointerEvents: isTutorialActive ? 'none' : 'auto', position: 'relative' }}>
+            {isSessionResumed && (
+              <Box sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                zIndex: 10,
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                alignItems: 'center',
+                borderRadius: '4px'
+              }}>
+                <Typography variant="h4" color="white" gutterBottom>
+                  Sessão Restaurada
+                </Typography>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  size="large"
+                  onClick={handleResumeSession}
+                >
+                  Continuar de onde parou
+                </Button>
+              </Box>
+            )}
             <Card>
               <CardContent>
                 <Box display="flex" alignItems="center" mb={1}>
@@ -712,11 +868,54 @@ const RecordingPage: React.FC = () => {
           <Typography variant="h5" textAlign="center">Nenhuma frase encontrada para este dataset.</Typography>
         )}
 
-        <Box mt={2} display="flex" justifyContent="center"><Button ref={homeButtonRef} component={Link} to="/">Voltar para a Home</Button></Box>
+        <Box mt={2} display="flex" justifyContent="center">
+          <Button ref={homeButtonRef} onClick={handleAbandonSession} color="error">
+            Abandonar Sessão
+          </Button>
+        </Box>
       </Box>
 
       {/* Modals */}
-      <Modal open={isCountdownModalOpen}><Box sx={modalStyle}><Typography variant="h1" textAlign="center">{countdown}</Typography></Box></Modal>
+      <Modal open={isCountdownModalOpen}>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '100%',
+            width: '100%',
+            backgroundColor: 'rgba(0, 0, 0, 0.6)',
+            '@keyframes pulse': {
+              '0%': {
+                transform: 'scale(0.8)',
+                opacity: 0,
+              },
+              '50%': {
+                transform: 'scale(1.1)',
+                opacity: 1,
+              },
+              '100%': {
+                transform: 'scale(1.5)',
+                opacity: 0,
+              },
+            },
+          }}
+        >
+          <Typography
+            key={countdown}
+            variant="h1"
+            sx={{
+              fontSize: '20rem',
+              fontWeight: 'bold',
+              color: 'white',
+              textShadow: '0 0 25px rgba(255, 255, 255, 0.7)',
+              animation: 'pulse 1s ease-in-out',
+            }}
+          >
+            {countdown}
+          </Typography>
+        </Box>
+      </Modal>
       <Modal open={isTransitionModalOpen}>
         <Box sx={modalStyle}>
           <Typography variant="h6" component="h2" textAlign="center">{transitionMessage.title}</Typography>

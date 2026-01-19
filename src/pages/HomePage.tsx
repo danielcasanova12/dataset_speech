@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button, Typography, Container, Box, CircularProgress, Grid } from '@mui/material';
 
 const datasetNames: { [key: number]: string } = {
@@ -11,6 +11,8 @@ const datasetNames: { [key: number]: string } = {
 const HomePage: React.FC = () => {
   const [datasets, setDatasets] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [savedProgress, setSavedProgress] = useState<{datasetId: string; currentPhraseIndex: number} | null>(null);
+  const navigate = useNavigate();
 
   const testApi = async () => {
     try {
@@ -47,6 +49,12 @@ const HomePage: React.FC = () => {
   };
 
   useEffect(() => {
+    // Check for saved progress
+    const savedProgressJSON = localStorage.getItem('recordingProgress');
+    if (savedProgressJSON) {
+      setSavedProgress(JSON.parse(savedProgressJSON));
+    }
+
     const fetchDatasets = async () => {
       try {
         const response = await fetch(`${process.env.PUBLIC_URL}/phrases_leitura.csv`);
@@ -103,21 +111,41 @@ const HomePage: React.FC = () => {
         {isLoading ? (
           <CircularProgress />
         ) : (
-          <Grid container spacing={2} justifyContent="center">
-            {datasets.map(datasetId => (
-              <Grid key={datasetId}>
+          <>
+            {savedProgress && (
+              <Box sx={{ mb: 4, p: 2, border: '1px dashed grey', borderRadius: 2 }}>
+                <Typography variant="h6" gutterBottom>
+                  Você tem uma sessão em andamento.
+                </Typography>
                 <Button
                   variant="contained"
-                  color="primary"
-                  component={Link}
-                  to={`/recording/${datasetId}`}
+                  color="success"
                   size="large"
+                  onClick={() => navigate(`/recording/${savedProgress.datasetId}`)}
                 >
-                  {datasetNames[datasetId] || `Dataset ${datasetId}`}
+                  Continuar de onde parou (Dataset {datasetNames[parseInt(savedProgress.datasetId, 10)] || savedProgress.datasetId})
                 </Button>
-              </Grid>
-            ))}
-          </Grid>
+                <Typography variant="body2" sx={{ mt: 2 }}>
+                  Ou escolha um novo dataset abaixo para começar do zero (seu progresso anterior será perdido ao iniciar uma nova gravação).
+                </Typography>
+              </Box>
+            )}
+            <Grid container spacing={2} justifyContent="center">
+              {datasets.map(datasetId => (
+                <Grid key={datasetId}>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    component={Link}
+                    to={`/recording/${datasetId}`}
+                    size="large"
+                  >
+                    {datasetNames[datasetId] || `Dataset ${datasetId}`}
+                  </Button>
+                </Grid>
+              ))}
+            </Grid>
+          </>
         )}
         <Button variant="contained" color="secondary" onClick={testApi} sx={{ mt: 2 }}>
           Test API
@@ -128,3 +156,4 @@ const HomePage: React.FC = () => {
 };
 
 export default HomePage;
+

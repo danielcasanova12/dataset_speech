@@ -18,7 +18,8 @@ const modalStyle = {
 export interface UserInfo {
   gender: string;
   age: string;
-  region: string;
+  birthState: string;
+  currentState: string;
 }
 
 interface UserInfoFormProps {
@@ -31,7 +32,8 @@ const UserInfoForm: React.FC<UserInfoFormProps> = ({ open, onSubmit, onClose }) 
   const [userInfo, setUserInfo] = useState<UserInfo>({
     gender: '',
     age: '',
-    region: '',
+    birthState: '',
+    currentState: '',
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | { name?: string; value: unknown }>) => {
@@ -46,7 +48,7 @@ const UserInfoForm: React.FC<UserInfoFormProps> = ({ open, onSubmit, onClose }) 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (userInfo.gender && userInfo.age && userInfo.region) {
+    if (userInfo.gender && userInfo.age && userInfo.birthState && userInfo.currentState) {
       onSubmit(userInfo);
     } else {
       alert('Por favor, preencha todos os campos.');
@@ -59,7 +61,7 @@ const UserInfoForm: React.FC<UserInfoFormProps> = ({ open, onSubmit, onClose }) 
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 4 }}>
           <AccountCircle sx={{ fontSize: 40, mr: 2, color: 'primary.main' }} />
           <Typography id="user-info-title" variant="h5" component="h2">
-            Informações
+            Informações Adicionais
           </Typography>
         </Box>
         <form onSubmit={handleSubmit}>
@@ -96,17 +98,24 @@ const UserInfoForm: React.FC<UserInfoFormProps> = ({ open, onSubmit, onClose }) 
             <TextField
               fullWidth
               required
-              id="region"
-              name="region"
-              label="Região / Estado (Ex: São Paulo, SP)"
-              value={userInfo.region}
+              id="birthState"
+              name="birthState"
+              label="Estado em que nasceu"
+              value={userInfo.birthState}
               onChange={handleChange}
             />
 
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 2 }}>
-              <Button onClick={onClose} variant="outlined" color="secondary" size="large">
-                Voltar
-              </Button>
+            <TextField
+              fullWidth
+              required
+              id="currentState"
+              name="currentState"
+              label="Estado em que mora atualmente"
+              value={userInfo.currentState}
+              onChange={handleChange}
+            />
+
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
               <Button type="submit" variant="contained" color="primary" size="large">
                 Continuar
               </Button>
