@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Button, Typography, Container, Grid, Box, Modal, Card, CardContent, CircularProgress, ThemeProvider, createTheme, CssBaseline } from '@mui/material';
+import { Button, Typography, Container, Grid, Box, Modal, Card, CardContent, CircularProgress, ThemeProvider, createTheme, CssBaseline, Snackbar, Alert } from '@mui/material';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import ConsentScreen from '../components/ConsentScreen';
@@ -184,6 +184,7 @@ const RecordingPage: React.FC = () => {
   const [isSessionResumed, setIsSessionResumed] = useState(false);
   const [isUserInfoModalOpen, setIsUserInfoModalOpen] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+  const [toast, setToast] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' | 'warning' | 'info' });
 
   // --- REFS ---
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -364,6 +365,13 @@ const RecordingPage: React.FC = () => {
     }
   };
 
+  const handleCloseToast = (event?: React.SyntheticEvent | Event, reason?: string) => {
+    if (reason === 'clickaway') {
+      return;
+    }
+    setToast(prev => ({ ...prev, open: false }));
+  };
+
   const stopRecording = (): Promise<Blob> => {
     return new Promise(resolve => {
       if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') {
@@ -442,6 +450,7 @@ const RecordingPage: React.FC = () => {
             setUploadStatus('success');
           } catch (error) {
             setUploadStatus('error');
+            setToast({ open: true, message: 'Erro ao enviar áudio. Por favor, contate o suporte.', severity: 'error' });
           } finally {
             setIsUploading(false);
           }
@@ -615,17 +624,25 @@ const RecordingPage: React.FC = () => {
   return (
     <ThemeProvider theme={darkTheme}>
       <CssBaseline />
+      <Snackbar
+        open={toast.open}
+        autoHideDuration={6000}
+        onClose={handleCloseToast}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Alert onClose={handleCloseToast} severity={toast.severity} sx={{ width: '100%' }}>
+          {toast.message}
+        </Alert>
+      </Snackbar>
       <Container maxWidth="lg" sx={{ py: 4 }}>
         {consentModalOpen && <ConsentScreen onAccept={handleAcceptConsent} onDecline={handleDeclineConsent} />}
         <UserInfoForm open={isUserInfoModalOpen} onSubmit={handleUserInfoSubmit} onClose={() => setIsUserInfoModalOpen(false)} />
         {tooltipConfig.open && <TutorialTooltip text={tooltipConfig.text} top={tooltipConfig.top} left={tooltipConfig.left} onNext={handleNextTutorialStep} onSkip={handleSkipTutorial} arrowTop={tooltipConfig.arrowTop} />}
-
         <Box sx={{ filter: tutorialStep !== null ? 'brightness(0.7)' : 'none', transition: 'filter 0.3s', '@keyframes tutorial-glow': { '0%': { boxShadow: `0 0 0 0px ${purple[300]}70` }, '70%': { boxShadow: `0 0 10px 10px ${purple[300]}00` }, '100%': { boxShadow: `0 0 0 0px ${purple[300]}00` } }, '.tutorial-highlight': { animation: 'tutorial-glow 1.5s infinite', borderRadius: '8px', zIndex: 1301, position: 'relative' } }}>
           <Typography variant="h3" component="h1" textAlign="center" sx={{ mb: 1 }}>
             Gravação de Fala ({datasetId ? datasetNames[parseInt(datasetId, 10)] : ''})
           </Typography>
           {sessionId && <Typography variant="subtitle1" color="text.secondary" textAlign="center" sx={{ mb: 4 }}>ID da Sessão: {sessionId}</Typography>}
-
           {phrases.length > 0 ? (
             <Card sx={{ backdropFilter: 'blur(10px)', backgroundColor: 'rgba(30, 30, 30, 0.75)', borderRadius: 4, border: `1px solid ${grey[800]}` }}>
               {isSessionResumed && (
