@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Typography, Container, Box, CircularProgress, Grid } from '@mui/material';
+import { useAuth } from '../contexts/AuthContext';
 
 const datasetNames: { [key: number]: string } = {
   1: "Dataset voz geral",
@@ -11,6 +12,7 @@ const datasetNames: { [key: number]: string } = {
 const HomePage: React.FC = () => {
   const [datasets, setDatasets] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const { isAuthenticated, logout } = useAuth();
 
   useEffect(() => {
     const fetchDatasets = async () => {
@@ -63,27 +65,53 @@ const HomePage: React.FC = () => {
         <Typography variant="h2" component="h1" gutterBottom>
           Voice Singing Dataset
         </Typography>
-        <Typography variant="h5" component="h2" sx={{ mb: 4 }}>
-          Selecione o Dataset
-        </Typography>
-        {isLoading ? (
-          <CircularProgress />
-        ) : (
-          <Grid container spacing={2} justifyContent="center">
-            {datasets.map(datasetId => (
-              <Grid key={datasetId}>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  component={Link}
-                  to={`/recording/${datasetId}`}
-                  size="large"
-                >
-                  {datasetNames[datasetId] || `Dataset ${datasetId}`}
+
+        {isAuthenticated ? (
+            <>
+                <Typography variant="h5" component="h2" sx={{ mb: 4 }}>
+                Selecione o Dataset
+                </Typography>
+                {isLoading ? (
+                <CircularProgress />
+                ) : (
+                <Grid container spacing={2} justifyContent="center" sx={{ mb: 4 }}>
+                    {datasets.map(datasetId => (
+                    <Grid key={datasetId}>
+                        <Button
+                        variant="contained"
+                        color="primary"
+                        component={Link}
+                        to={`/recording/${datasetId}`}
+                        size="large"
+                        >
+                        {datasetNames[datasetId] || `Dataset ${datasetId}`}
+                        </Button>
+                    </Grid>
+                    ))}
+                </Grid>
+                )}
+                <Button variant="outlined" color="error" onClick={logout}>
+                    Sair
                 </Button>
-              </Grid>
-            ))}
-          </Grid>
+            </>
+        ) : (
+            <Box>
+                 <Typography variant="h6" sx={{ mb: 3 }}>
+                    Faça login para começar
+                </Typography>
+                <Grid container spacing={2} justifyContent="center">
+                    <Grid>
+                         <Button variant="contained" color="primary" component={Link} to="/login" size="large">
+                            Login
+                        </Button>
+                    </Grid>
+                     <Grid>
+                         <Button variant="outlined" color="primary" component={Link} to="/register" size="large">
+                            Cadastrar
+                        </Button>
+                    </Grid>
+                </Grid>
+            </Box>
         )}
       </Box>
     </Container>

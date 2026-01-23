@@ -4,6 +4,10 @@ import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import HomePage from './pages/HomePage';
 import RecordingPage from './pages/RecordingPage';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import PrivateRoute from './components/PrivateRoute';
+import { AuthProvider } from './contexts/AuthContext';
 
 const theme = createTheme({
   palette: {
@@ -25,12 +29,19 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Router>
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/recording/:datasetId" element={<RecordingPage />} />
-        </Routes>
-      </Router>
+      <AuthProvider>
+        <Router>
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+
+            <Route element={<PrivateRoute />}>
+              <Route path="/recording/:datasetId" element={<RecordingPage />} />
+            </Route>
+          </Routes>
+        </Router>
+      </AuthProvider>
     </ThemeProvider>
   );
 }

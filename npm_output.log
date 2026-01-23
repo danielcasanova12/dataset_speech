@@ -1,0 +1,39 @@
+
+> dataset_speech@1.1.1 start
+> react-scripts start
+
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+(node:4065) [DEP_WEBPACK_DEV_SERVER_ON_AFTER_SETUP_MIDDLEWARE] DeprecationWarning: 'onAfterSetupMiddleware' option is deprecated. Please use the 'setupMiddlewares' option.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:4065) [DEP_WEBPACK_DEV_SERVER_ON_BEFORE_SETUP_MIDDLEWARE] DeprecationWarning: 'onBeforeSetupMiddleware' option is deprecated. Please use the 'setupMiddlewares' option.
+Starting the development server...
+
+Compiled with warnings.
+
+[eslint]
+src/pages/RecordingPage.tsx
+  Line 161:10:  'micPermissionStatus' is assigned a value but never used   @typescript-eslint/no-unused-vars
+  Line 164:10:  'uploadStatus' is assigned a value but never used          @typescript-eslint/no-unused-vars
+  Line 360:9:   'triggerPhraseAction' is assigned a value but never used   @typescript-eslint/no-unused-vars
+  Line 510:9:   'handlePreviousPhrase' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+src/pages/RegisterPage.tsx
+  Line 5:32:  'HistoricoMoradia' is defined but never used  @typescript-eslint/no-unused-vars
+  Line 5:50:  'Familiar' is defined but never used          @typescript-eslint/no-unused-vars
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+WARNING in [eslint]
+src/pages/RecordingPage.tsx
+  Line 161:10:  'micPermissionStatus' is assigned a value but never used   @typescript-eslint/no-unused-vars
+  Line 164:10:  'uploadStatus' is assigned a value but never used          @typescript-eslint/no-unused-vars
+  Line 360:9:   'triggerPhraseAction' is assigned a value but never used   @typescript-eslint/no-unused-vars
+  Line 510:9:   'handlePreviousPhrase' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+src/pages/RegisterPage.tsx
+  Line 5:32:  'HistoricoMoradia' is defined but never used  @typescript-eslint/no-unused-vars
+  Line 5:50:  'Familiar' is defined but never used          @typescript-eslint/no-unused-vars
+
+webpack compiled with 1 warning
+No issues found.

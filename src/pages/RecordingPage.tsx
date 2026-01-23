@@ -3,6 +3,8 @@ import { Button, Typography, Container, Paper, Box, Modal, Card, CardContent, Ci
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import ConsentScreen from '../components/ConsentScreen';
+import { useAuth } from '../contexts/AuthContext';
+import { api, API_BASE_URL } from '../services/api';
 
 const datasetNames: { [key: number]: string } = {
   1: "Dataset voz geral",
@@ -30,7 +32,7 @@ const modalStyle = {
   width: 400, bgcolor: 'background.paper', border: '2px solid #000', boxShadow: 24, p: 4,
 };
 
-const uploadAudio = async (audioBlob: Blob, metadata: any) => {
+const uploadAudio = async (audioBlob: Blob, metadata: any, token: string) => {
   const formData = new FormData();
 
   // Sanitize the MIME type by removing the ';codecs=...' part.
@@ -38,7 +40,8 @@ const uploadAudio = async (audioBlob: Blob, metadata: any) => {
   const sanitizedBlob = new Blob([audioBlob], { type: sanitizedType });
 
   formData.append("audio", sanitizedBlob, `recording.${metadata.format || 'webm'}`);
-  formData.append("userId", metadata.userId);
+  // userId is inferred from token
+  // formData.append("userId", metadata.userId);
   formData.append("sessionId", metadata.sessionId);
   formData.append("datasetId", metadata.datasetId);
   formData.append("phraseId", metadata.phraseId);
@@ -52,13 +55,11 @@ const uploadAudio = async (audioBlob: Blob, metadata: any) => {
     userAgent: navigator.userAgent
   }));
 
-  const credentials = btoa("admin:admin");
-
   try {
-    const response = await fetch("http://127.0.0.1:8000/api/v1/recordings", {
+    const response = await fetch(`${API_BASE_URL}/api/v1/recordings`, {
       method: "POST",
       headers: {
-        "Authorization": `Basic ${credentials}`,
+        "Authorization": `Bearer ${token}`,
         "Accept": "application/json",
       },
       body: formData
@@ -133,6 +134,10 @@ const TutorialTooltip: React.FC<{ text: string; top: number; left: number; onNex
 
 // --- MAIN COMPONENT ---
 const RecordingPage: React.FC = () => {
+  // --- NAVIGATION & PARAMS ---
+  const navigate = useNavigate();
+  const { datasetId } = useParams<{ datasetId: string }>();
+
   // --- STATE ---
   const [phrases, setPhrases] = useState<Phrase[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -158,7 +163,32 @@ const RecordingPage: React.FC = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [sessionId] = useState(() => `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const { token } = useAuth();
+
+  useEffect(() => {
+    if (token && datasetId) {
+        // Use the dataset name if available, otherwise use the ID or a generic name
+        const datasetName = datasetNames[parseInt(datasetId)] || `Dataset ${datasetId}`;
+
+        // Maps dataset ID to the string expected by the backend if needed.
+        // For now, assuming backend accepts the string name or we might need to adjust this mapping.
+        // The example says "meu_novo_dataset".
+
+        api.createSession(datasetName, token)
+            .then(session => {
+                // Assuming the session object has an 'id' field.
+                if (session && session.id) {
+                    setSessionId(session.id);
+                } else {
+                    console.error("Session created but no ID returned:", session);
+                }
+            })
+            .catch(err => {
+                console.error("Failed to create session:", err);
+            });
+    }
+  }, [token, datasetId]);
 
 
   // --- REFS ---
@@ -182,10 +212,6 @@ const RecordingPage: React.FC = () => {
   const currentPhrase = phrases[currentPhraseIndex];
   const currentVideoSrc = resolveVideoSrc(currentPhrase?.videoSrc);
   const hasVideo = !!currentVideoSrc;
-
-  // --- NAVIGATION & PARAMS ---
-  const navigate = useNavigate();
-  const { datasetId } = useParams<{ datasetId: string }>();
 
   // --- PERMISSION HANDLER ---
   const requestMicPermission = async () => {
@@ -438,18 +464,22 @@ const RecordingPage: React.FC = () => {
           try {
             const mimeType = audioBlob.type;
             const format = mimeType.split('/')[1]?.split(';')[0] || 'webm';
-            const metadata = {
-              userId: "admin",
-              sessionId: sessionId,
-              datasetId: datasetId,
-              phraseId: currentPhrase.id,
-              duration: durationInSeconds,
-              recordedAt: new Date().toISOString(),
-              emotionId: currentPhrase.emocaoid,
-              format: format,
-            };
-            await uploadAudio(audioBlob, metadata);
-            setUploadStatus('success');
+            if (sessionId && token) {
+                const metadata = {
+                    sessionId: sessionId,
+                    datasetId: datasetId,
+                    phraseId: currentPhrase.id,
+                    duration: durationInSeconds,
+                    recordedAt: new Date().toISOString(),
+                    emotionId: currentPhrase.emocaoid,
+                    format: format,
+                };
+                await uploadAudio(audioBlob, metadata, token);
+                setUploadStatus('success');
+            } else {
+                console.error("Missing sessionId or token");
+                setUploadStatus('error');
+            }
           } catch (error) {
             setUploadStatus('error');
           } finally {
