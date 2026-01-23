@@ -30,3 +30,6 @@ api_blueprint.md
 API_DOCS.md
 public/manual.md
 .firebase/hosting.YnVpbGQ.cache
+.aider*
+.env
+venv

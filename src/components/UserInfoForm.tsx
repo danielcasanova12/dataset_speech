@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Modal, Box, Typography, TextField, Button, Select, MenuItem, FormControl, InputLabel, Grid } from '@mui/material';
+import { Modal, Box, Typography, TextField, Button, Select, MenuItem, FormControl, InputLabel } from '@mui/material';
 import AccountCircle from '@mui/icons-material/AccountCircle';
 
 const modalStyle = {
@@ -20,6 +20,7 @@ export interface UserInfo {
   age: string;
   birthState: string;
   currentState: string;
+  dataset?: string; // Made dataset optional
 }
 
 interface UserInfoFormProps {

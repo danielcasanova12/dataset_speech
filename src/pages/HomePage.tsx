@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Button, Typography, Container, Box, CircularProgress, Grid, Card, CardContent, CardActions, ThemeProvider, createTheme, CssBaseline } from '@mui/material';
+import { Button, Typography, Container, Box, CircularProgress, Card, CardContent, CardActions, ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { purple, grey } from '@mui/material/colors';
 import MicIcon from '@mui/icons-material/Mic';
 import MusicNoteIcon from '@mui/icons-material/MusicNote';
 import MoodIcon from '@mui/icons-material/Mood';
 import WaveformIcon from '@mui/icons-material/GraphicEq';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
+import { useAuth } from '../context/AuthContext';
 
 // --- THEME ---
 const darkTheme = createTheme({
@@ -72,6 +73,7 @@ const HomePage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [savedProgress, setSavedProgress] = useState<{datasetId: string; currentPhraseIndex: number} | null>(null);
   const navigate = useNavigate();
+  const { isAuthenticated, logout } = useAuth();
 
   useEffect(() => {
     const savedProgressJSON = localStorage.getItem('recordingProgress');
@@ -108,10 +110,32 @@ const HomePage: React.FC = () => {
     fetchDatasets();
   }, []);
 
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
   return (
     <ThemeProvider theme={darkTheme}>
       <CssBaseline />
       <Container maxWidth="md" sx={{ textAlign: 'center', py: 6 }}>
+        <Box sx={{ position: 'absolute', top: 16, right: 16, display: 'flex', gap: 2 }}>
+          {isAuthenticated ? (
+            <Button variant="outlined" color="primary" onClick={handleLogout}>
+              Logout
+            </Button>
+          ) : (
+            <>
+              <Button variant="outlined" color="primary" component={Link} to="/login">
+                Login
+              </Button>
+              <Button variant="contained" color="primary" component={Link} to="/register">
+                Register
+              </Button>
+            </>
+          )}
+        </Box>
+
         <Box mb={6}>
           <WaveformIcon color="primary" sx={{ fontSize: 60, mb: 2 }} />
           <Typography variant="h2" component="h1" gutterBottom>

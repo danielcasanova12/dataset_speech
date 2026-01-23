@@ -2,8 +2,12 @@
 import React from 'react';
 import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
+import { AuthProvider } from './context/AuthContext';
 import HomePage from './pages/HomePage';
 import RecordingPage from './pages/RecordingPage';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import ProtectedRoute from './components/ProtectedRoute';
 
 const theme = createTheme({
   palette: {
@@ -25,12 +29,18 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Router>
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/recording/:datasetId" element={<RecordingPage />} />
-        </Routes>
-      </Router>
+      <AuthProvider>
+        <Router>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/" element={<HomePage />} />
+            <Route element={<ProtectedRoute />}>
+              <Route path="/recording/:datasetId" element={<RecordingPage />} />
+            </Route>
+          </Routes>
+        </Router>
+      </AuthProvider>
     </ThemeProvider>
   );
 }
