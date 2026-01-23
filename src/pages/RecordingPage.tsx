@@ -33,11 +33,7 @@ const modalStyle = {
 const uploadAudio = async (audioBlob: Blob, metadata: any) => {
   const formData = new FormData();
 
-  // Sanitize the MIME type by removing the ';codecs=...' part.
-  const sanitizedType = audioBlob.type.split(';')[0];
-  const sanitizedBlob = new Blob([audioBlob], { type: sanitizedType });
-
-  formData.append("audio", sanitizedBlob, `recording.${metadata.format || 'webm'}`);
+  formData.append("audio", audioBlob, `recording.${metadata.format || 'webm'}`);
   formData.append("userId", metadata.userId);
   formData.append("sessionId", metadata.sessionId);
   formData.append("datasetId", metadata.datasetId);
