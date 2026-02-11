@@ -1,8 +1,12 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Button, Typography, Container, Paper, Box, Modal, Card, CardContent, CircularProgress } from '@mui/material';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Button, Typography, Container, Paper, Box, Modal, Card, CardContent, CircularProgress, TextField } from '@mui/material';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import ConsentScreen from '../components/ConsentScreen';
+
+import VoiceCheckScreen from '../components/VoiceCheckScreen';
+import VoiceSampleScreen from '../components/VoiceSampleScreen';
+import RoomToneScreen from '../components/RoomToneScreen';
 import { useAuth } from '../contexts/AuthContext';
 import { api, API_BASE_URL } from '../services/api';
 
@@ -32,28 +36,36 @@ const modalStyle = {
   width: 400, bgcolor: 'background.paper', border: '2px solid #000', boxShadow: 24, p: 4,
 };
 
-const uploadAudio = async (audioBlob: Blob, metadata: any, token: string) => {
+const uploadAudio = async (audioBlob: Blob, metadata: any, token: string, room_tone_end: boolean = false) => {
   const formData = new FormData();
 
   // Sanitize the MIME type by removing the ';codecs=...' part.
   const sanitizedType = audioBlob.type.split(';')[0];
   const sanitizedBlob = new Blob([audioBlob], { type: sanitizedType });
 
-  formData.append("audio", sanitizedBlob, `recording.${metadata.format || 'webm'}`);
-  // userId is inferred from token
-  // formData.append("userId", metadata.userId);
-  formData.append("sessionId", metadata.sessionId);
-  formData.append("datasetId", metadata.datasetId);
-  formData.append("phraseId", metadata.phraseId);
-  formData.append("duration", metadata.duration);
-  formData.append("recordedAt", metadata.recordedAt);
-  if (metadata.emotionId) {
-    formData.append("emotionId", metadata.emotionId);
+  formData.append("audio_file", sanitizedBlob, `recording.${metadata.format || 'webm'}`);
+  formData.append("session_id", metadata.sessionId);
+  formData.append("dataset_id", metadata.datasetId);
+  if (metadata.blocoId) {
+    formData.append("bloco_id", metadata.blocoId);
+  } else {
+    console.warn("bloco_id is missing for normal recording. Using placeholder '1'.");
+    formData.append("bloco_id", "1"); // Fallback if not provided
   }
+  if (metadata.phraseId) {
+    formData.append("frase_id", metadata.phraseId);
+  }
+  formData.append("duration", metadata.duration.toString());
   formData.append("format", metadata.format || 'webm');
-  formData.append("deviceInfo", JSON.stringify({
-    userAgent: navigator.userAgent
-  }));
+  formData.append("sample_rate", metadata.sampleRate.toString());
+  // Add frase_content
+  if (metadata.fraseContent) {
+    formData.append("frase_content", metadata.fraseContent);
+  }
+  if (room_tone_end) {
+    formData.append("room_tone_end", "1");
+  }
+
 
   try {
     const response = await fetch(`${API_BASE_URL}/api/v1/recordings`, {
@@ -79,6 +91,52 @@ const uploadAudio = async (audioBlob: Blob, metadata: any, token: string) => {
     throw error;
   }
 };
+
+const uploadTestAudio = async (audioBlob: Blob, token: string, sessionId: string, datasetId: string, duration: number, room_tone_start: boolean = false) => {
+  const formData = new FormData();
+
+  const sanitizedType = audioBlob.type.split(';')[0];
+  const format = sanitizedType.split('/')[1] || 'webm';
+  const sanitizedBlob = new Blob([audioBlob], { type: sanitizedType });
+
+  formData.append("audio_file", sanitizedBlob, `test_recording.${format}`);
+  formData.append("is_test", "true");
+  if (room_tone_start) {
+    formData.append("room_tone_start", "1");
+  }
+  formData.append("session_id", sessionId);
+  formData.append("dataset_id", datasetId);
+  formData.append("bloco_id", "1"); // Placeholder for test recording
+  formData.append("frase_id", "0"); // Placeholder for test recording
+  formData.append("duration", duration.toString());
+  formData.append("format", format);
+  formData.append("sample_rate", "48000"); // Common sample rate, hardcoded for now.
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/recordings`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Accept": "application/json",
+      },
+      body: formData
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error(`Error ${response.status}:`, errorData.detail);
+      throw new Error(`API Error: ${errorData.detail}`);
+    }
+
+    const result = await response.json();
+    console.log("Test audio upload successful:", result);
+    return result;
+  } catch (error) {
+    console.error("An error occurred during the test audio upload:", error);
+    throw error;
+  }
+};
+
 
 
 const TutorialTooltip: React.FC<{ text: string; top: number; left: number; onNext: () => void; arrowTop?: string | number; }> = ({
@@ -132,6 +190,15 @@ const TutorialTooltip: React.FC<{ text: string; top: number; left: number; onNex
   </Box>
 );
 
+const convertGoogleDriveUrl = (url: string): string | null => {
+  if (!url || !url.includes('drive.google.com')) return null;
+  const match = url.match(/file\/d\/(.*?)\//);
+  if (match && match[1]) {
+    return `https://drive.google.com/uc?export=download&id=${match[1]}`;
+  }
+  return null;
+};
+
 // --- MAIN COMPONENT ---
 const RecordingPage: React.FC = () => {
   // --- NAVIGATION & PARAMS ---
@@ -151,7 +218,11 @@ const RecordingPage: React.FC = () => {
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [isInitialPlayback, setIsInitialPlayback] = useState(false);
   const [countdown, setCountdown] = useState(3);
-  const [consentModalOpen, setConsentModalOpen] = useState(true);
+  const [consentModalOpen, setConsentModalOpen] = useState(false);
+  const [voiceCheckOpen, setVoiceCheckOpen] = useState(false);
+  const [voiceSampleStep, setVoiceSampleStep] = useState<'ready' | 'recording' | 'recorded' | 'playing'>('ready');
+  const [voiceSampleUrl, setVoiceSampleUrl] = useState<string | null>(null);
+  const [isVoiceSampleDone, setIsVoiceSampleDone] = useState(false);
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
   const [tooltipConfig, setTooltipConfig] = useState<{ open: boolean; text: string; top: number; left: number; arrowTop?: string | number; }>({ open: false, text: '', top: 0, left: 0 });
   const [currentCsvFile, setCurrentCsvFile] = useState('apresentacao.csv');
@@ -159,45 +230,35 @@ const RecordingPage: React.FC = () => {
   const [isPhraseVisible, setIsPhraseVisible] = useState(true);
   const [transitionMessage, setTransitionMessage] = useState({ title: '', body: '' });
   const [micPermissionStatus, setMicPermissionStatus] = useState<'idle' | 'pending' | 'granted' | 'denied'>('idle');
-  const [isMicErrorModalOpen, setIsMicErrorModalOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [isProcessing, setIsProcessing] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isMicErrorModalOpen, setIsMicErrorModalOpen] = useState(false);
   const { token } = useAuth();
-
-  useEffect(() => {
-    if (token && datasetId) {
-        // Use the dataset name if available, otherwise use the ID or a generic name
-        const datasetName = datasetNames[parseInt(datasetId)] || `Dataset ${datasetId}`;
-
-        // Maps dataset ID to the string expected by the backend if needed.
-        // For now, assuming backend accepts the string name or we might need to adjust this mapping.
-        // The example says "meu_novo_dataset".
-
-        api.createSession(datasetName, token)
-            .then(session => {
-                // Assuming the session object has an 'id' field.
-                if (session && session.id) {
-                    setSessionId(session.id);
-                } else {
-                    console.error("Session created but no ID returned:", session);
-                }
-            })
-            .catch(err => {
-                console.error("Failed to create session:", err);
-            });
-    }
-  }, [token, datasetId]);
-
+  const [showExistingSessionModal, setShowExistingSessionModal] = useState(false);
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [isRoomToneScreenOpen, setIsRoomToneScreenOpen] = useState(false);
+  const [roomToneCountdown, setRoomToneCountdown] = useState(5);
+  const [isRecordingRoomTone, setIsRecordingRoomTone] = useState(false);
+  const [initialCountdown, setInitialCountdown] = useState(3);
+  const [initialCountdownActive, setInitialCountdownActive] = useState(false);
+  const [hasCompletedVoiceCheck, setHasCompletedVoiceCheck] = useState(false);
+  const [finalizationStep, setFinalizationStep] = useState<'idle' | 'room_tone' | 'notes'>('idle');
+  const [sessionNotes, setSessionNotes] = useState('');
+  const [isRecordingFinalRoomTone, setIsRecordingFinalRoomTone] = useState(false);
+  const [finalRoomToneCountdown, setFinalRoomToneCountdown] = useState(5);
 
   // --- REFS ---
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaRecorderSampleRef = useRef<MediaRecorder | null>(null);
+  const audioChunksSampleRef = useRef<Blob[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recordingStartTimeRef = useRef<number>(0); // For precise duration
+  const recordingSampleStartTimeRef = useRef<number>(0);
   const animationFrameId = useRef<number | null>(null);
   const timerIntervalId = useRef<NodeJS.Timeout | null>(null);
   const phraseTextRef = useRef<HTMLElement>(null);
@@ -221,7 +282,6 @@ const RecordingPage: React.FC = () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach(track => track.stop()); // Stop tracks immediately
       setMicPermissionStatus('granted');
-      setTutorialStep(0); // Proceed to tutorial
       return true;
     } catch (err) {
       console.error("Microphone permission denied:", err);
@@ -231,11 +291,62 @@ const RecordingPage: React.FC = () => {
     }
   };
 
-  // --- EFFECTS ---
-  useEffect(() => {
-    setConsentModalOpen(true);
-  }, []);
 
+  // --- EFFECTS ---
+
+  // Effect for initial consent check and mic permission
+  useEffect(() => {
+    const hasConsented = sessionStorage.getItem('has_consented');
+    if (!hasConsented) {
+      setConsentModalOpen(true);
+    } else {
+      setConsentModalOpen(false);
+      // Only show VoiceCheckScreen if mic permission is not granted AND we haven't completed the voice check yet
+      if (micPermissionStatus !== 'granted' && !hasCompletedVoiceCheck) {
+        setVoiceCheckOpen(true);
+      } else {
+        setVoiceCheckOpen(false); // Ensure it's closed if permission is granted or check completed
+      }
+    }
+  }, [micPermissionStatus, hasCompletedVoiceCheck]);
+
+  // Effect for session creation/resumption
+  useEffect(() => {
+    const createOrResumeSession = async () => {
+      if (!token || !datasetId) return;
+
+      const cachedSessionId = localStorage.getItem('session_id');
+      const cachedDatasetId = localStorage.getItem('datasetId');
+
+      if (cachedSessionId && cachedDatasetId === datasetId) {
+        setSessionId(cachedSessionId);
+        return;
+      }
+
+      try {
+        const session = await api.createSession(datasetId, true, token);
+        localStorage.setItem('session_id', session.id);
+        localStorage.setItem('datasetId', datasetId);
+        setSessionId(session.id);
+      } catch (error: any) {
+        try {
+          const errorJson = JSON.parse(error.message);
+          if (errorJson.session_id) {
+            localStorage.setItem('session_id', errorJson.session_id);
+            localStorage.setItem('datasetId', datasetId); // Assume current datasetId
+            setSessionId(errorJson.session_id);
+            setShowExistingSessionModal(true);
+          }
+        } catch (parseError) {
+          console.error("Failed to parse session error:", parseError);
+        }
+      }
+    };
+
+    createOrResumeSession();
+  }, [token, datasetId]);
+
+  // Effect to fetch phrases
   useEffect(() => {
     if (!datasetId) return;
     const fetchPhrases = async () => {
@@ -278,7 +389,41 @@ const RecordingPage: React.FC = () => {
     };
     fetchPhrases();
   }, [datasetId, currentCsvFile]);
+  
+  // Effect to load progress
+  useEffect(() => {
+    if (phrases.length > 0) {
+      const savedProgressRaw = localStorage.getItem('recording_progress');
+      if (savedProgressRaw) {
+        try {
+          const savedProgress = JSON.parse(savedProgressRaw);
+          if (savedProgress.sessionId === sessionId && savedProgress.datasetId === datasetId) {
+            const phraseIndex = phrases.findIndex(p => p.id === savedProgress.phraseId);
+            if (phraseIndex !== -1) {
+              setCurrentPhraseIndex(phraseIndex);
+            }
+          }
+        } catch (e) {
+          console.error("Failed to parse saved progress", e);
+          localStorage.removeItem('recording_progress');
+        }
+      }
+    }
+  }, [phrases, sessionId, datasetId]);
 
+  // Effect to save progress
+  useEffect(() => {
+    if (sessionId && datasetId && currentPhrase?.id) {
+      const progress = {
+        sessionId: sessionId,
+        datasetId: datasetId,
+        phraseId: currentPhrase.id,
+      };
+      localStorage.setItem('recording_progress', JSON.stringify(progress));
+    }
+  }, [currentPhraseIndex, sessionId, datasetId, currentPhrase]);
+
+  // Effect for tutorial steps
   useEffect(() => {
     // Definição dos passos do tutorial com referências e textos.
     const isReadingPart = currentCsvFile === 'phrases_leitura.csv';
@@ -323,6 +468,7 @@ const RecordingPage: React.FC = () => {
     return () => tutorialSteps.forEach(step => step.ref.current?.classList.remove('tutorial-highlight'));
   }, [tutorialStep, currentCsvFile]);
 
+  // Effect for general recording timer/visualization
   useEffect(() => {
     if (isRecording) {
       timerIntervalId.current = setInterval(() => setTimer((prev) => prev + 1), 1000);
@@ -338,11 +484,188 @@ const RecordingPage: React.FC = () => {
   }, [isRecording]);
 
   // --- HANDLERS ---
+
   const handleAcceptConsent = () => {
+    sessionStorage.setItem('has_consented', 'true');
     setConsentModalOpen(false);
-    requestMicPermission();
+    if (micPermissionStatus !== 'granted' && !hasCompletedVoiceCheck) {
+      setVoiceCheckOpen(true);
+    }
   };
   const handleDeclineConsent = () => navigate('/');
+
+  const handleStartRoomToneRecording = () => {
+    setInitialCountdownActive(true);
+  };
+
+  useEffect(() => {
+    let initialInterval: NodeJS.Timeout | undefined;
+    if (initialCountdownActive) {
+      setInitialCountdown(3);
+      initialInterval = setInterval(() => {
+        setInitialCountdown(prev => {
+          if (prev > 1) {
+            return prev - 1;
+          }
+          clearInterval(initialInterval);
+          setInitialCountdownActive(false);
+          setIsRecordingRoomTone(true);
+          return 0;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (initialInterval) clearInterval(initialInterval);
+    };
+  }, [initialCountdownActive]);
+  
+  const handleRoomToneRecordingComplete = useCallback(() => {
+    setIsRoomToneScreenOpen(false);
+    setIsRecordingRoomTone(false); // Reset for next time
+    setTutorialStep(0); // Start the tutorial
+  }, []);
+  
+  useEffect(() => {
+    let countdownInterval: NodeJS.Timeout | undefined;
+    if (isRecordingRoomTone) {
+      setRoomToneCountdown(5);
+  
+      const startRecordingLogic = async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          audioChunksSampleRef.current = [];
+          const recorder = new MediaRecorder(stream);
+          mediaRecorderSampleRef.current = recorder;
+  
+          recorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+              audioChunksSampleRef.current.push(event.data);
+            }
+          };
+  
+          recorder.start();
+  
+          setTimeout(() => {
+            if (recorder.state === 'recording') {
+              recorder.stop();
+            }
+          }, 5000);
+  
+          recorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunksSampleRef.current, { type: 'audio/webm' });
+            if (token && sessionId && datasetId) {
+              try {
+                setIsUploading(true);
+                await uploadTestAudio(audioBlob, token, sessionId, datasetId, 5, true);
+              } catch (error) {
+                console.error("Failed to upload room tone audio:", error);
+              } finally {
+                setIsUploading(false);
+              }
+            }
+            stream.getTracks().forEach(track => track.stop());
+            handleRoomToneRecordingComplete();
+          };
+        } catch (err) {
+          console.error("Failed to start room tone recording:", err);
+          setIsMicErrorModalOpen(true);
+          setIsRecordingRoomTone(false);
+        }
+      };
+  
+      startRecordingLogic();
+  
+      countdownInterval = setInterval(() => {
+        setRoomToneCountdown(prev => {
+          if (prev > 1) {
+            return prev - 1;
+          }
+          clearInterval(countdownInterval);
+          return 0;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (countdownInterval) clearInterval(countdownInterval);
+    };
+  }, [isRecordingRoomTone, token, sessionId, datasetId, handleRoomToneRecordingComplete]);
+
+  const handleVoiceCheckSubmit = (voiceQuality: string) => {
+    console.log('Voice quality:', voiceQuality); // Placeholder for future use
+    setVoiceCheckOpen(false);
+    setHasCompletedVoiceCheck(true); // Mark as completed
+    requestMicPermission();
+  };
+
+  const handleStartSampleRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksSampleRef.current = [];
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderSampleRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksSampleRef.current.push(event.data);
+        }
+      };
+      recorder.start();
+      recordingSampleStartTimeRef.current = performance.now(); // Start timer
+      setVoiceSampleStep('recording');
+    } catch (err) {
+      console.error("Failed to start sample recording:", err);
+      setIsMicErrorModalOpen(true);
+    }
+  };
+
+  const handleStopSampleRecording = () => {
+    if (mediaRecorderSampleRef.current && mediaRecorderSampleRef.current.state === 'recording') {
+      mediaRecorderSampleRef.current.onstop = async () => {
+        const durationInSeconds = (performance.now() - recordingSampleStartTimeRef.current) / 1000;
+        const audioBlob = new Blob(audioChunksSampleRef.current, { type: 'audio/webm' });
+        
+        setVoiceSampleStep('recorded');
+        
+        // Always use the local blob for playback, as server URLs are unreliable.
+        const localAudioUrl = URL.createObjectURL(audioBlob);
+        setVoiceSampleUrl(localAudioUrl);
+
+        if (token && sessionId && datasetId) {
+          try {
+            setIsUploading(true);
+            // We still upload the test audio, but we don't use the response for playback.
+            await uploadTestAudio(audioBlob, token, sessionId, datasetId, durationInSeconds);
+          } catch (error) {
+            console.error("Failed to upload test audio:", error);
+          } finally {
+            setIsUploading(false);
+          }
+        } else {
+            console.warn("No session, token, or datasetId available for test audio upload.");
+        }
+
+        if (mediaRecorderSampleRef.current?.stream) {
+          mediaRecorderSampleRef.current.stream.getTracks().forEach(track => track.stop());
+        }
+      };
+      mediaRecorderSampleRef.current.stop();
+    }
+  };
+
+  const handlePlaySample = () => {
+    if (voiceSampleUrl) {
+      setVoiceSampleStep('playing');
+    }
+  };
+
+  const handleSamplePlaybackEnded = () => {
+    setVoiceSampleStep('recorded');
+  };
+
+  const handleContinueFromSample = () => {
+    setIsVoiceSampleDone(true);
+    setIsRoomToneScreenOpen(true);
+  };
+
   const handleNextTutorialStep = () => {
     const isReadingPart = currentCsvFile === 'phrases_leitura.csv';
     const isLastStep = tutorialStep === (isReadingPart ? 1 : 4);
@@ -428,14 +751,22 @@ const RecordingPage: React.FC = () => {
     if (currentPhraseIndex < phrases.length - 1) {
       const nextIndex = currentPhraseIndex + 1;
       setCurrentPhraseIndex(nextIndex);
-      
+
       const nextPhrase = phrases[nextIndex];
       if (nextPhrase && !nextPhrase.videoSrc) {
+        setCountdown(3);
         setIsCountdownModalOpen(true);
-        // Use a simple promise for delay to keep flow linear
-        await new Promise(res => setTimeout(res, 3000));
-        setIsCountdownModalOpen(false);
-        await startRecording();
+        const countdownTimer = setInterval(() => {
+          setCountdown(prev => {
+            if (prev > 1) {
+              return prev - 1;
+            }
+            clearInterval(countdownTimer);
+            setIsCountdownModalOpen(false);
+            startRecording();
+            return 0;
+          });
+        }, 1000);
       }
     } else {
       if (currentCsvFile === 'apresentacao.csv') {
@@ -445,7 +776,7 @@ const RecordingPage: React.FC = () => {
         });
         setIsTransitionModalOpen(true);
       } else {
-        setOpenFinishModal(true);
+        setFinalizationStep('room_tone');
       }
     }
   };
@@ -473,8 +804,11 @@ const RecordingPage: React.FC = () => {
                     recordedAt: new Date().toISOString(),
                     emotionId: currentPhrase.emocaoid,
                     format: format,
+                    blocoId: "1", // Placeholder for normal recording
+                    sampleRate: 48000, // Hardcoded for now
+                    fraseContent: currentPhrase?.text, // Include frase_content
                 };
-                await uploadAudio(audioBlob, metadata, token);
+                await uploadAudio(audioBlob, metadata, token, false);
                 setUploadStatus('success');
             } else {
                 console.error("Missing sessionId or token");
@@ -670,6 +1004,131 @@ const RecordingPage: React.FC = () => {
     draw();
   };
 
+  const handleFinish = async () => {
+    if (sessionId && token) {
+      try {
+        await api.patch(`/sessions/${sessionId}/finish`, {
+          finished_at: new Date().toISOString(),
+          notes: sessionNotes || "finalizada",
+          room_tone_end: 1,
+        }, token);
+      } catch (error) {
+        console.error("Failed to finish session:", error);
+      } finally {
+        localStorage.removeItem('session_id');
+        localStorage.removeItem('recording_progress');
+        setFinalizationStep('idle');
+        setOpenFinishModal(true);
+      }
+    } else {
+      localStorage.removeItem('session_id');
+      localStorage.removeItem('recording_progress');
+      navigate('/');
+    }
+  };
+
+  const handleStartFinalRoomToneRecording = () => {
+    setIsRecordingFinalRoomTone(true);
+  };
+  
+  useEffect(() => {
+    let countdownInterval: NodeJS.Timeout | undefined;
+    if (isRecordingFinalRoomTone) {
+      setFinalRoomToneCountdown(5);
+  
+      const startRecordingLogic = async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          audioChunksSampleRef.current = [];
+          const recorder = new MediaRecorder(stream);
+  
+          recorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+              audioChunksSampleRef.current.push(event.data);
+            }
+          };
+  
+          recorder.start();
+  
+          setTimeout(() => {
+            if (recorder.state === 'recording') recorder.stop();
+          }, 5000);
+  
+          recorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunksSampleRef.current, { type: 'audio/webm' });
+            if (token && sessionId && datasetId) {
+              try {
+                const metadata = {
+                  sessionId: sessionId,
+                  datasetId: datasetId,
+                  duration: 5,
+                  format: 'webm',
+                  sampleRate: 48000,
+                };
+                await uploadAudio(audioBlob, metadata, token, true);
+              } catch (error) {
+                console.error("Failed to upload final room tone audio:", error);
+              }
+            }
+            stream.getTracks().forEach(track => track.stop());
+            setIsRecordingFinalRoomTone(false);
+            setFinalizationStep('notes');
+          };
+        } catch (err) {
+          console.error("Failed to start final room tone recording:", err);
+          setIsMicErrorModalOpen(true);
+          setIsRecordingFinalRoomTone(false);
+        }
+      };
+  
+      startRecordingLogic();
+  
+      countdownInterval = setInterval(() => {
+        setFinalRoomToneCountdown(prev => {
+          if (prev > 1) return prev - 1;
+          clearInterval(countdownInterval);
+          return 0;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (countdownInterval) clearInterval(countdownInterval);
+    };
+  }, [isRecordingFinalRoomTone, token, sessionId, datasetId]);
+
+  const handleGoHome = () => {
+    // We don't clear session_id here, so the user can come back.
+    // If you want to abandon the session, you should use a different button/logic.
+    navigate('/');
+  };
+
+  const handleCancelSession = () => {
+    setIsCancelModalOpen(true);
+  };
+
+  const confirmCancelSession = async () => {
+    if (sessionId && token) {
+      try {
+        await api.patch(`/sessions/${sessionId}/finish`, {
+          finished_at: new Date().toISOString(),
+          notes: "cancelada",
+        }, token);
+      } catch (error) {
+        console.error("Failed to finish session:", error);
+      } finally {
+        localStorage.removeItem('session_id');
+        localStorage.removeItem('datasetId');
+        localStorage.removeItem('recording_progress');
+        navigate('/');
+      }
+    } else {
+      localStorage.removeItem('session_id');
+      localStorage.removeItem('datasetId');
+      localStorage.removeItem('recording_progress');
+      navigate('/');
+    }
+  };
+
   const getDbfsColor = (dbfs: number) => dbfs > -20 ? 'red' : dbfs > -40 ? 'yellow' : 'green';
   const formatTime = (time: number) => `${Math.floor(time / 60).toString().padStart(2, '0')}:${(time % 60).toString().padStart(2, '0')}`;
 
@@ -680,7 +1139,30 @@ const RecordingPage: React.FC = () => {
 
   return (
     <Container maxWidth="lg">
-      {consentModalOpen && <ConsentScreen onAccept={handleAcceptConsent} onDecline={handleDeclineConsent} />}
+      <Modal open={consentModalOpen} onClose={() => {}}>
+        <ConsentScreen onAccept={handleAcceptConsent} onDecline={handleDeclineConsent} />
+      </Modal>
+
+      {voiceCheckOpen && <VoiceCheckScreen onSubmit={handleVoiceCheckSubmit} />}
+      {micPermissionStatus === 'granted' && !isVoiceSampleDone && (
+        <VoiceSampleScreen
+          step={voiceSampleStep}
+          audioUrl={voiceSampleUrl}
+          onStartRecording={handleStartSampleRecording}
+          onStopRecording={handleStopSampleRecording}
+          onPlay={handlePlaySample}
+          onContinue={handleContinueFromSample}
+          onPlaybackEnded={handleSamplePlaybackEnded}
+        />
+      )}
+      {isRoomToneScreenOpen && (
+        <RoomToneScreen
+          onStartRecording={handleStartRoomToneRecording}
+          isRecording={isRecordingRoomTone}
+          initialCountdownActive={initialCountdownActive}
+          countdown={isRecordingRoomTone ? roomToneCountdown : initialCountdown}
+        />
+      )}
       {tooltipConfig.open && <TutorialTooltip text={tooltipConfig.text} top={tooltipConfig.top} left={tooltipConfig.left} onNext={handleNextTutorialStep} arrowTop={tooltipConfig.arrowTop} />}
 
       <Box sx={{
@@ -748,7 +1230,14 @@ const RecordingPage: React.FC = () => {
           <Typography variant="h5" textAlign="center">Nenhuma frase encontrada para este dataset.</Typography>
         )}
 
-        <Box mt={2} display="flex" justifyContent="center"><Button ref={homeButtonRef} component={Link} to="/">Voltar para a Home</Button></Box>
+        <Box mt={2} display="flex" justifyContent="center">
+          <Button ref={homeButtonRef} component={Link} to="/" onClick={handleGoHome} sx={{ mr: 2 }}>
+            Voltar para a Home
+          </Button>
+          <Button variant="outlined" color="error" onClick={handleCancelSession}>
+            Cancelar Sessão
+          </Button>
+        </Box>
       </Box>
 
       {/* Modals */}
@@ -764,11 +1253,57 @@ const RecordingPage: React.FC = () => {
           </Box>
         </Box>
       </Modal>
+       <Modal open={finalizationStep === 'room_tone'}>
+        <Box sx={modalStyle}>
+          <Typography variant="h6" component="h2">Gravação Final de Som Ambiente</Typography>
+          <Typography sx={{ mt: 2 }}>
+            Para finalizar, vamos gravar mais 5 segundos de silêncio. Por favor, não fale.
+          </Typography>
+          {!isRecordingFinalRoomTone ? (
+            <Button onClick={handleStartFinalRoomToneRecording} variant="contained" sx={{ mt: 2 }}>
+              Iniciar Gravação
+            </Button>
+          ) : (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="h2">{finalRoomToneCountdown}</Typography>
+              <CircularProgress />
+            </Box>
+          )}
+        </Box>
+      </Modal>
+
+      <Modal open={finalizationStep === 'notes'}>
+        <Box sx={modalStyle}>
+          <Typography variant="h6" component="h2">Notas da Sessão</Typography>
+          <TextField
+            label="Adicione suas notas aqui"
+            multiline
+            rows={4}
+            value={sessionNotes}
+            onChange={(e) => setSessionNotes(e.target.value)}
+            variant="outlined"
+            fullWidth
+            sx={{ mt: 2 }}
+          />
+          <Button 
+            onClick={handleFinish} 
+            variant="contained" 
+            sx={{ mt: 2 }}
+            disabled={!sessionNotes.trim()}
+          >
+            Finalizar Sessão
+          </Button>
+        </Box>
+      </Modal>
+
       <Modal open={openFinishModal}>
         <Box sx={modalStyle}>
           <Typography variant="h6" component="h2" textAlign="center">Sessão Finalizada!</Typography>
+          <Typography sx={{ mt: 2, textAlign: 'center' }}>
+            Obrigado pela sua participação!
+          </Typography>
           <Box mt={2} display="flex" justifyContent="center">
-            <Button component={Link} to="/">Voltar para a Home</Button>
+            <Button component={Link} to="/" variant="contained">Voltar para a Home</Button>
           </Box>
         </Box>
       </Modal>
@@ -786,6 +1321,37 @@ const RecordingPage: React.FC = () => {
           </Typography>
           <Box mt={3} display="flex" justifyContent="center">
             <Button onClick={() => window.location.reload()} variant="contained">Recarregar a Página</Button>
+          </Box>
+        </Box>
+      </Modal>
+
+      <Modal open={showExistingSessionModal}>
+        <Box sx={modalStyle}>
+          <Typography variant="h6" component="h2" textAlign="center">Sessão Existente</Typography>
+          <Typography sx={{ mt: 2, textAlign: 'center' }}>
+            Você já tem uma sessão aberta.
+          </Typography>
+          <Box mt={3} display="flex" justifyContent="center">
+            <Button onClick={() => setShowExistingSessionModal(false)} variant="contained">
+              Retornar à sessão
+            </Button>
+          </Box>
+        </Box>
+      </Modal>
+
+      <Modal open={isCancelModalOpen}>
+        <Box sx={modalStyle}>
+          <Typography variant="h6" component="h2" textAlign="center">Cancelar Sessão</Typography>
+          <Typography sx={{ mt: 2, textAlign: 'center' }}>
+            Tem certeza que deseja cancelar a sessão? Todo o seu progresso será perdido.
+          </Typography>
+          <Box mt={3} display="flex" justifyContent="space-around">
+            <Button onClick={() => setIsCancelModalOpen(false)} variant="outlined">
+              Voltar
+            </Button>
+            <Button onClick={confirmCancelSession} variant="contained" color="error">
+              Confirmar
+            </Button>
           </Box>
         </Box>
       </Modal>

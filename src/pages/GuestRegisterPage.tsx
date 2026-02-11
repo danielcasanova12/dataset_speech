@@ -18,10 +18,10 @@ interface IBGECidadeResponse {
   nome: string;
 }
 
-const RegisterPage: React.FC = () => {
+const GuestRegisterPage: React.FC = () => {
   const [formData, setFormData] = useState<UserRegistrationData>({
     email: '',
-    password: '',
+    password: 'DEFAULT_GUEST_PASSWORD', // Hardcoded password for guest users
     nome_completo: '',
     data_nascimento: '',
     genero: '',
@@ -37,7 +37,7 @@ const RegisterPage: React.FC = () => {
   const [cidadesNascimento, setCidadesNascimento] = useState<IBGECidadeResponse[]>([]);
   const [cidadesAtual, setCidadesAtual] = useState<IBGECidadeResponse[]>([]);
   const [cidadesHistorico, setCidadesHistorico] = useState<{ [key: number]: IBGECidadeResponse[] }>({});
-  const { register } = useAuth();
+  const { register, login } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -95,7 +95,8 @@ const RegisterPage: React.FC = () => {
     setError(null);
     try {
       await register(formData);
-      navigate('/login');
+      await login(formData.email, formData.password);
+      navigate('/');
     } catch (err: any) {
       setError(err.message || 'Falha no cadastro. Verifique os dados.');
     } finally {
@@ -115,7 +116,7 @@ const RegisterPage: React.FC = () => {
                     <Avatar sx={{ m: 1, bgcolor: 'primary.main' }}>
                         <HowToRegOutlinedIcon />
                     </Avatar>
-                    <Typography component="h1" variant="h5">Cadastro</Typography>
+                    <Typography component="h1" variant="h5">Entrar como Visitante</Typography>
                 </Box>
                 <Box component="form" onSubmit={handleSubmit} sx={{ mt: 3 }}>
                 {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -128,9 +129,7 @@ const RegisterPage: React.FC = () => {
                   <Grid item xs={12} sm={6}>
                     <TextField required fullWidth label="Email" name="email" type="email" value={formData.email} onChange={handleChange} />
                   </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField required fullWidth label="Senha" name="password" type="password" value={formData.password} onChange={handleChange} />
-                  </Grid>
+                  {/* Password field is removed for guest registration */}
                   <Grid item xs={12} sm={6}>
                     <TextField required fullWidth label="Data de Nascimento" name="data_nascimento" type="date" InputLabelProps={{ shrink: true }} value={formData.data_nascimento} onChange={handleChange} />
                   </Grid>
@@ -277,7 +276,7 @@ const RegisterPage: React.FC = () => {
 
 
                 <Button type="submit" fullWidth variant="contained" size="large" disabled={isLoading} sx={{ mt: 4 }}>
-                    {isLoading ? 'Cadastrando...' : 'Cadastrar'}
+                    {isLoading ? 'Entrando...' : 'Entrar como Visitante'}
                 </Button>
                 <Grid container justifyContent="flex-end" sx={{mt: 2}}>
                     <Grid item>
@@ -301,4 +300,4 @@ const RegisterPage: React.FC = () => {
   );
 };
 
-export default RegisterPage;
+export default GuestRegisterPage;

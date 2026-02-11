@@ -1,34 +1,4 @@
 id,emocaoId,datasetId,text,videoSrc,id_origem
-0,1,2,"Leia as frases em voz alta.","",1
-1,1,2,"O gato subiu no telhado.","",1
+0,1,1,"Leia as frases em voz alta.","",1
+1,1,1,"O gato subiu no telhado.","",1
 2,1,2,"Agora é exatamente 13 horas","",1
-3,1,2,"A reunião foi adiada para a próxima semana.","",1
-4,1,2,"Preciso comprar pão e leite no mercado.","",1
-5,1,2,"O filme começou às oito da noite.","",1
-6,1,2,"Ela trabalha em um escritório de advocacia.","",1
-7,1,2,"A importância da educação para o desenvolvimento social e econômico de uma nação é inegável.","",1
-8,1,2,"Os pesquisadores concluíram que a vacina experimental demonstrou resultados promissores na prevenção de novas infecções.","",1
-9,1,2,"Você gostaria de café ou chá?","",1
-10,1,2,"O trânsito estava congestionado por causa de um acidente na rodovia.","",1
-11,1,2,"Que notícia incrível!","",1
-12,1,2,"Vamos começar o projeto agora mesmo!","",1
-13,1,2,"Você não vai acreditar no que aconteceu.","",1
-14,1,2,"Isso é fantástico!","",1
-15,1,2,"Todos estão muito animados com o resultado.","",1
-16,1,2,"Essa situação é muito injusta com os bichinhos.","",1
-17,1,2,"Muitas animais sofrem sem culpa nenhuma.","",1
-18,1,2,"É difícil ver tanta crueldade no mundo.","",1
-19,1,2,"Que alegria ver esse animal recebendo uma segunda chance.","",1
-20,1,2,"Resgates assim restauram minha fé na humanidade.","",1
-21,1,2,"Histórias de esperança como essa me inspiram demais.","",1
-22,1,2,"Isso mostra o poder que temos de transformar nossas vidas.","",1
-23,1,2,"Quando nos dedicamos, conseguimos alcançar qualquer objetivo.","",1
-24,1,2,"Histórias assim me motivam a ser uma pessoa melhor.","",1
-25,1,1,"O céu está azul hoje.","",1
-26,1,1,"Obrigado pela sua ajuda.","",1
-27,1,3,"Estou muito feliz com a notícia!","",1
-28,1,3,"Que dia triste.","",1
-29,1,3,"Estou muito feliz com a notícia!","",1
-30,1,3,"Que dia triste.","",1
-31,1,3,"Estou muito feliz com a notícia!","",1
-32,1,3,"Que dia triste.","",1

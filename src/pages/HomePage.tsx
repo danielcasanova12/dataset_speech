@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, Typography, Container, Box, CircularProgress, Grid } from '@mui/material';
+import { Button, Typography, Container, Box, CircularProgress, Grid, IconButton } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
+import Brightness4Icon from '@mui/icons-material/Brightness4';
+import Brightness7Icon from '@mui/icons-material/Brightness7';
+import { api } from '../services/api';
 
 const datasetNames: { [key: number]: string } = {
   1: "Dataset voz geral",
@@ -12,7 +16,37 @@ const datasetNames: { [key: number]: string } = {
 const HomePage: React.FC = () => {
   const [datasets, setDatasets] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const { isAuthenticated, logout } = useAuth();
+  const { isAuthenticated, logout, token } = useAuth();
+  const { mode, toggleTheme } = useTheme();
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [activeDatasetId, setActiveDatasetId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const sessionId = localStorage.getItem('session_id');
+    const datasetId = localStorage.getItem('datasetId');
+    if (sessionId && datasetId) {
+      setActiveSessionId(sessionId);
+      setActiveDatasetId(datasetId);
+    }
+  }, []);
+
+  const clearSession = async () => {
+    if (activeSessionId && token) {
+      try {
+        await api.patch(`/sessions/${activeSessionId}/finish`, {
+          finished_at: new Date().toISOString(),
+          notes: "cancelada",
+        }, token);
+      } catch (error) {
+        console.error("Failed to finish session:", error);
+      }
+    }
+    localStorage.removeItem('session_id');
+    localStorage.removeItem('datasetId');
+    localStorage.removeItem('recording_progress');
+    setActiveSessionId(null);
+    setActiveDatasetId(null);
+  };
 
   useEffect(() => {
     const fetchDatasets = async () => {
@@ -54,6 +88,11 @@ const HomePage: React.FC = () => {
 
   return (
     <Container>
+      <Box sx={{ position: 'absolute', top: 16, right: 16 }}>
+        <IconButton sx={{ ml: 1 }} onClick={toggleTheme} color="inherit">
+          {mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
+        </IconButton>
+      </Box>
       <Box
         display="flex"
         flexDirection="column"
@@ -68,6 +107,28 @@ const HomePage: React.FC = () => {
 
         {isAuthenticated ? (
             <>
+                {activeSessionId && activeDatasetId && (
+                  <Box sx={{ mb: 2 }}>
+                    <Button
+                      variant="contained"
+                      color="secondary"
+                      component={Link}
+                      to={`/recording/${activeDatasetId}`}
+                      size="large"
+                      sx={{ mr: 2 }}
+                    >
+                      Voltar para a sessão
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      color="warning"
+                      onClick={clearSession}
+                      size="large"
+                    >
+                      Limpar Sessão
+                    </Button>
+                  </Box>
+                )}
                 <Typography variant="h5" component="h2" sx={{ mb: 4 }}>
                 Selecione o Dataset
                 </Typography>
@@ -76,7 +137,7 @@ const HomePage: React.FC = () => {
                 ) : (
                 <Grid container spacing={2} justifyContent="center" sx={{ mb: 4 }}>
                     {datasets.map(datasetId => (
-                    <Grid key={datasetId}>
+                    <Grid item key={datasetId}>
                         <Button
                         variant="contained"
                         color="primary"
@@ -100,14 +161,19 @@ const HomePage: React.FC = () => {
                     Faça login para começar
                 </Typography>
                 <Grid container spacing={2} justifyContent="center">
-                    <Grid>
+                    <Grid item>
                          <Button variant="contained" color="primary" component={Link} to="/login" size="large">
                             Login
                         </Button>
                     </Grid>
-                     <Grid>
-                         <Button variant="outlined" color="primary" component={Link} to="/register" size="large">
+                     <Grid item>
+                         <Button variant="contained" color="primary" component={Link} to="/register" size="large">
                             Cadastrar
+                        </Button>
+                    </Grid>
+                    <Grid item>
+                         <Button variant="contained" color="secondary" component={Link} to="/guest-register" size="large">
+                            Entrar como Visitante
                         </Button>
                     </Grid>
                 </Grid>
