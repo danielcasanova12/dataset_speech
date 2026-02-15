@@ -125,6 +125,23 @@ export const api = {
     return response.json();
   },
 
+  getSession: async (id: string, token: string): Promise<SessionResponse> => {
+    const response = await fetch(`${API_BASE_URL}/api/v1/sessions/${id}`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Failed to fetch session');
+    }
+
+    return response.json();
+  },
+
   getRecording: async (id: number, token: string): Promise<RecordingResponse> => {
     const response = await fetch(`${API_BASE_URL}/api/v1/recordings/${id}` , {
       method: 'GET',

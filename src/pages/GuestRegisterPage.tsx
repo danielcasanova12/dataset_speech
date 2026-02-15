@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Typography, TextField, Button, Box, Link as MuiLink, Alert, Grid, IconButton, Card, CardContent, Avatar, Select, MenuItem, FormControl, InputLabel } from '@mui/material';
+import { Container, Typography, TextField, Button, Box, Link as MuiLink, Alert, Grid, IconButton, Card, CardContent, Avatar, Select, MenuItem, FormControl, InputLabel, Paper, Modal } from '@mui/material';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { UserRegistrationData } from '../services/api';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import HowToRegOutlinedIcon from '@mui/icons-material/HowToRegOutlined';
+import ConsentScreen from '../components/ConsentScreen';
 
 interface IBGEUFResponse {
   id: number;
@@ -39,12 +40,32 @@ const GuestRegisterPage: React.FC = () => {
   const [cidadesHistorico, setCidadesHistorico] = useState<{ [key: number]: IBGECidadeResponse[] }>({});
   const { register, login } = useAuth();
   const navigate = useNavigate();
+  const [validationError, setValidationError] = useState({ email: '' });
+  const [consentModalOpen, setConsentModalOpen] = useState(false);
+  const [hasConsented, setHasConsented] = useState(false);
 
   useEffect(() => {
     fetch('https://servicodados.ibge.gov.br/api/v1/localidades/estados')
       .then(response => response.json())
       .then(data => setEstados(data.sort((a: IBGEUFResponse, b: IBGEUFResponse) => a.nome.localeCompare(b.nome))));
+
+    const hasConsentedGuest = sessionStorage.getItem('has_consented_guest');
+    if (hasConsentedGuest === 'true') {
+      setHasConsented(true);
+    } else {
+      setConsentModalOpen(true);
+    }
   }, []);
+
+  const handleAcceptConsent = () => {
+    sessionStorage.setItem('has_consented_guest', 'true');
+    setHasConsented(true);
+    setConsentModalOpen(false);
+  };
+
+  const handleDeclineConsent = () => {
+    navigate('/');
+  };
 
   const fetchCidades = (estado: string, setCidades: React.Dispatch<React.SetStateAction<IBGECidadeResponse[]>>) => {
     fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${estado}/municipios`)
@@ -91,11 +112,33 @@ const GuestRegisterPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
     setError(null);
+
+    if (!hasConsented) {
+      setConsentModalOpen(true);
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+      setValidationError({ email: 'Formato de e-mail inválido.' });
+      return;
+    } else {
+      setValidationError({ email: '' });
+    }
+
+    setIsLoading(true);
+    
+    const registrationData: UserRegistrationData = {
+      ...formData,
+      historico_moradia: formData.historico_moradia.length === 1 && !formData.historico_moradia[0].periodo 
+        ? [] 
+        : formData.historico_moradia,
+    };
+
     try {
-      await register(formData);
-      await login(formData.email, formData.password);
+      await register(registrationData);
+      await login(registrationData.email, registrationData.password);
       navigate('/');
     } catch (err: any) {
       setError(err.message || 'Falha no cadastro. Verifique os dados.');
@@ -106,6 +149,9 @@ const GuestRegisterPage: React.FC = () => {
 
   return (
     <Container component="main" maxWidth="md" sx={{ mt: 4, mb: 4 }}>
+      <Modal open={consentModalOpen} onClose={() => {}}>
+        <ConsentScreen onAccept={handleAcceptConsent} onDecline={handleDeclineConsent} />
+      </Modal>
         <Card sx={{ 
             boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)',
             backdropFilter: 'blur(4px)',
@@ -123,13 +169,22 @@ const GuestRegisterPage: React.FC = () => {
 
                 <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>Dados Pessoais</Typography>
                 <Grid container spacing={2}>
-                  <Grid item xs={12} sm={6}>
+                  <Grid item xs={12}>
                     <TextField required fullWidth label="Nome Completo" name="nome_completo" value={formData.nome_completo} onChange={handleChange} />
                   </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField required fullWidth label="Email" name="email" type="email" value={formData.email} onChange={handleChange} />
+                  <Grid item xs={12}>
+                    <TextField 
+                        required 
+                        fullWidth 
+                        label="Email" 
+                        name="email" 
+                        type="email" 
+                        value={formData.email} 
+                        onChange={handleChange}
+                        error={!!validationError.email}
+                        helperText={validationError.email}
+                    />
                   </Grid>
-                  {/* Password field is removed for guest registration */}
                   <Grid item xs={12} sm={6}>
                     <TextField required fullWidth label="Data de Nascimento" name="data_nascimento" type="date" InputLabelProps={{ shrink: true }} value={formData.data_nascimento} onChange={handleChange} />
                   </Grid>
@@ -143,75 +198,81 @@ const GuestRegisterPage: React.FC = () => {
                       </Select>
                     </FormControl>
                   </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <FormControl fullWidth required>
-                      <InputLabel>Idioma</InputLabel>
-                      <Select name="language" value={formData.language} onChange={(e) => handleChange(e as any)}>
-                        <MenuItem value="Português">Português</MenuItem>
-                        <MenuItem value="English">English</MenuItem>
-                        <MenuItem value="Español">Español</MenuItem>
-                      </Select>
-                    </FormControl>
-                  </Grid>
                 </Grid>
 
                 <Typography variant="h6" gutterBottom sx={{ mt: 4 }}>Localização</Typography>
-                <Grid container spacing={4}>
-                  <Grid item xs={12} sm={6}>
-                    <Typography variant="subtitle1">Cidade de Nascimento</Typography>
-                    <FormControl fullWidth margin="dense">
-                        <InputLabel>Estado</InputLabel>
-                        <Select
-                            value={formData.cidade_nascimento.estado}
-                            onChange={(e) => {
-                                handleNestedChange('cidade_nascimento', 'estado', e.target.value);
-                                fetchCidades(e.target.value, setCidadesNascimento);
-                            }}
-                        >
-                            {estados.map(estado => (
-                                <MenuItem key={estado.id} value={estado.sigla}>{estado.nome}</MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
-                    <FormControl fullWidth margin="dense" disabled={!formData.cidade_nascimento.estado}>
-                        <InputLabel>Cidade</InputLabel>
-                        <Select
-                            value={formData.cidade_nascimento.cidade}
-                            onChange={(e) => handleNestedChange('cidade_nascimento', 'cidade', e.target.value)}
-                        >
-                            {cidadesNascimento.map(cidade => (
-                                <MenuItem key={cidade.id} value={cidade.nome}>{cidade.nome}</MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
+                <Grid container spacing={2}>
+                  <Grid item xs={12}>
+                    <Paper sx={{ p: 2, border: '1px solid #ddd' }}>
+                        <Typography variant="subtitle1" gutterBottom>Cidade de Nascimento</Typography>
+                        <Grid container spacing={2}>
+                            <Grid item xs={12} sm={6}>
+                                <FormControl fullWidth>
+                                    <InputLabel>Estado</InputLabel>
+                                    <Select
+                                        value={formData.cidade_nascimento.estado}
+                                        onChange={(e) => {
+                                            handleNestedChange('cidade_nascimento', 'estado', e.target.value);
+                                            fetchCidades(e.target.value, setCidadesNascimento);
+                                        }}
+                                    >
+                                        {estados.map(estado => (
+                                            <MenuItem key={estado.id} value={estado.sigla}>{estado.nome}</MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <FormControl fullWidth disabled={!formData.cidade_nascimento.estado}>
+                                    <InputLabel>Cidade</InputLabel>
+                                    <Select
+                                        value={formData.cidade_nascimento.cidade}
+                                        onChange={(e) => handleNestedChange('cidade_nascimento', 'cidade', e.target.value)}
+                                    >
+                                        {cidadesNascimento.map(cidade => (
+                                            <MenuItem key={cidade.id} value={cidade.nome}>{cidade.nome}</MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                            </Grid>
+                        </Grid>
+                    </Paper>
                   </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <Typography variant="subtitle1">Cidade Atual</Typography>
-                    <FormControl fullWidth margin="dense">
-                        <InputLabel>Estado</InputLabel>
-                        <Select
-                            value={formData.cidade_atual.estado}
-                            onChange={(e) => {
-                                handleNestedChange('cidade_atual', 'estado', e.target.value);
-                                fetchCidades(e.target.value, setCidadesAtual);
-                            }}
-                        >
-                            {estados.map(estado => (
-                                <MenuItem key={estado.id} value={estado.sigla}>{estado.nome}</MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
-                    <FormControl fullWidth margin="dense" disabled={!formData.cidade_atual.estado}>
-                        <InputLabel>Cidade</InputLabel>
-                        <Select
-                            value={formData.cidade_atual.cidade}
-                            onChange={(e) => handleNestedChange('cidade_atual', 'cidade', e.target.value)}
-                        >
-                            {cidadesAtual.map(cidade => (
-                                <MenuItem key={cidade.id} value={cidade.nome}>{cidade.nome}</MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
+                  <Grid item xs={12}>
+                    <Paper sx={{ p: 2, border: '1px solid #ddd' }}>
+                        <Typography variant="subtitle1" gutterBottom>Cidade Atual</Typography>
+                        <Grid container spacing={2}>
+                            <Grid item xs={12} sm={6}>
+                                <FormControl fullWidth>
+                                    <InputLabel>Estado</InputLabel>
+                                    <Select
+                                        value={formData.cidade_atual.estado}
+                                        onChange={(e) => {
+                                            handleNestedChange('cidade_atual', 'estado', e.target.value);
+                                            fetchCidades(e.target.value, setCidadesAtual);
+                                        }}
+                                    >
+                                        {estados.map(estado => (
+                                            <MenuItem key={estado.id} value={estado.sigla}>{estado.nome}</MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <FormControl fullWidth disabled={!formData.cidade_atual.estado}>
+                                    <InputLabel>Cidade</InputLabel>
+                                    <Select
+                                        value={formData.cidade_atual.cidade}
+                                        onChange={(e) => handleNestedChange('cidade_atual', 'cidade', e.target.value)}
+                                    >
+                                        {cidadesAtual.map(cidade => (
+                                            <MenuItem key={cidade.id} value={cidade.nome}>{cidade.nome}</MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                            </Grid>
+                        </Grid>
+                    </Paper>
                   </Grid>
                 </Grid>
 
@@ -265,7 +326,7 @@ const GuestRegisterPage: React.FC = () => {
                               </FormControl>
                           </Grid>
                           <Grid item xs={12} sm={2}>
-                              <IconButton color="error" onClick={() => removeHistorico(index)} disabled={formData.historico_moradia.length === 1}>
+                              <IconButton color="error" onClick={() => removeHistorico(index)}>
                                   <RemoveCircleOutlineIcon />
                               </IconButton>
                           </Grid>
@@ -275,7 +336,7 @@ const GuestRegisterPage: React.FC = () => {
                 })}
 
 
-                <Button type="submit" fullWidth variant="contained" size="large" disabled={isLoading} sx={{ mt: 4 }}>
+                <Button type="submit" fullWidth variant="contained" size="large" disabled={isLoading || !!validationError.email || !hasConsented} sx={{ mt: 4 }}>
                     {isLoading ? 'Entrando...' : 'Entrar como Visitante'}
                 </Button>
                 <Grid container justifyContent="flex-end" sx={{mt: 2}}>

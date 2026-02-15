@@ -1,0 +1,15 @@
+blockId,name,tipo,emocao,esponaniedade
+0,"Bloco de Leitura",1,0,0
+1,"Bloco de Respostas",1,0,1
+2,"Bloco de Emocao feliz",1,2,0
+3,"Bloco de Emocao triste",1,3,0
+4,"Bloco de Emocao raiva",1,4,0
+5,"Bloco de Emocao medo",1,5,0
+6,"Bloco de Emocao surpresa",1,6,0
+7,"Bloco de Emocao neutra",1,1,0
+8,"Bloco de Emocao neutra video",1,1,1
+9,"Bloco de Emocao feliz video",1,2,1
+10,"Bloco de Emocao triste video",1,3,1
+11,"Bloco de Emocao raiva video",1,4,1
+12,"Bloco de Emocao medo video",1,5,1
+13,"Bloco de Emocao surpresa video",1,6,1

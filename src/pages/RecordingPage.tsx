@@ -248,6 +248,10 @@ const RecordingPage: React.FC = () => {
   const [sessionNotes, setSessionNotes] = useState('');
   const [isRecordingFinalRoomTone, setIsRecordingFinalRoomTone] = useState(false);
   const [finalRoomToneCountdown, setFinalRoomToneCountdown] = useState(5);
+  const [isUploadErrorModalOpen, setIsUploadErrorModalOpen] = useState(false);
+  const [uploadErrorMessage, setUploadErrorMessage] = useState('');
+  const [pendingUpload, setPendingUpload] = useState<{ audioBlob: Blob; metadata: any } | null>(null);
+  const [existingSessionInfo, setExistingSessionInfo] = useState<{ sessionId: string; datasetId: string } | null>(null);
 
   // --- REFS ---
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -269,6 +273,7 @@ const RecordingPage: React.FC = () => {
   const ignoreButtonRef = useRef<HTMLButtonElement>(null);
   const homeButtonRef = useRef<HTMLAnchorElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const sessionCreationLock = useRef(false);
 
   const currentPhrase = phrases[currentPhraseIndex];
   const currentVideoSrc = resolveVideoSrc(currentPhrase?.videoSrc);
@@ -313,36 +318,55 @@ const RecordingPage: React.FC = () => {
   // Effect for session creation/resumption
   useEffect(() => {
     const createOrResumeSession = async () => {
-      if (!token || !datasetId) return;
-
-      const cachedSessionId = localStorage.getItem('session_id');
-      const cachedDatasetId = localStorage.getItem('datasetId');
-
-      if (cachedSessionId && cachedDatasetId === datasetId) {
-        setSessionId(cachedSessionId);
-        return;
-      }
-
+      if (!token || !datasetId || sessionCreationLock.current) return;
+      sessionCreationLock.current = true;
+  
       try {
-        const session = await api.createSession(datasetId, true, token);
-        localStorage.setItem('session_id', session.id);
-        localStorage.setItem('datasetId', datasetId);
-        setSessionId(session.id);
+        const activeSessionStr = localStorage.getItem('active_session');
+        if (activeSessionStr) {
+          const activeSession = JSON.parse(activeSessionStr);
+          if (activeSession.datasetId === datasetId) {
+            setSessionId(activeSession.sessionId);
+            return;
+          } else {
+            // Active session exists, but for a different dataset.
+            setExistingSessionInfo({ sessionId: activeSession.sessionId, datasetId: activeSession.datasetId });
+            setShowExistingSessionModal(true);
+            return;
+          }
+        }
+  
+        // No active session found in localStorage, try to create one.
+        const newSession = await api.createSession(datasetId, true, token);
+        const sessionData = { sessionId: newSession.id, datasetId: newSession.dataset_id, status: 'active' };
+        localStorage.setItem('active_session', JSON.stringify(sessionData));
+        setSessionId(newSession.id);
+  
       } catch (error: any) {
         try {
           const errorJson = JSON.parse(error.message);
-          if (errorJson.session_id) {
-            localStorage.setItem('session_id', errorJson.session_id);
-            localStorage.setItem('datasetId', datasetId); // Assume current datasetId
-            setSessionId(errorJson.session_id);
-            setShowExistingSessionModal(true);
+          if (errorJson.session_id && token) {
+            // A session exists on the backend, but wasn't in localStorage.
+            // Fetch its details to get the correct datasetId.
+            const existingSession = await api.getSession(errorJson.session_id, token);
+            const sessionData = { sessionId: existingSession.id, datasetId: existingSession.dataset_id, status: 'active' };
+            localStorage.setItem('active_session', JSON.stringify(sessionData));
+
+            if (existingSession.dataset_id.toString() === datasetId) {
+                setSessionId(existingSession.id);
+            } else {
+                setExistingSessionInfo({ sessionId: existingSession.id, datasetId: existingSession.dataset_id.toString() });
+                setShowExistingSessionModal(true);
+            }
           }
         } catch (parseError) {
           console.error("Failed to parse session error:", parseError);
         }
+      } finally {
+        sessionCreationLock.current = false;
       }
     };
-
+  
     createOrResumeSession();
   }, [token, datasetId]);
 
@@ -493,6 +517,20 @@ const RecordingPage: React.FC = () => {
     }
   };
   const handleDeclineConsent = () => navigate('/');
+
+  const handleRedirectToExistingSession = () => {
+    if (existingSessionInfo) {
+      const sessionData = { 
+        sessionId: existingSessionInfo.sessionId, 
+        datasetId: existingSessionInfo.datasetId, 
+        status: 'active' 
+      };
+      localStorage.setItem('active_session', JSON.stringify(sessionData));
+      navigate(`/recording/${existingSessionInfo.datasetId}`);
+      setShowExistingSessionModal(false);
+      setExistingSessionInfo(null);
+    }
+  };
 
   const handleStartRoomToneRecording = () => {
     setInitialCountdownActive(true);
@@ -784,47 +822,90 @@ const RecordingPage: React.FC = () => {
   const handleNextPhrase = async () => {
     if (isProcessing) return;
     setIsProcessing(true);
-    try {
-      if (isRecording) {
-        const durationInSeconds = (performance.now() - recordingStartTimeRef.current) / 1000;
-        const audioBlob = await stopRecording();
 
-        if (audioBlob.size > 0) {
-          setIsUploading(true);
-          setUploadStatus('idle');
-          try {
-            const mimeType = audioBlob.type;
-            const format = mimeType.split('/')[1]?.split(';')[0] || 'webm';
-            if (sessionId && token) {
-                const metadata = {
-                    sessionId: sessionId,
-                    datasetId: datasetId,
-                    phraseId: currentPhrase.id,
-                    duration: durationInSeconds,
-                    recordedAt: new Date().toISOString(),
-                    emotionId: currentPhrase.emocaoid,
-                    format: format,
-                    blocoId: "1", // Placeholder for normal recording
-                    sampleRate: 48000, // Hardcoded for now
-                    fraseContent: currentPhrase?.text, // Include frase_content
-                };
-                await uploadAudio(audioBlob, metadata, token, false);
-                setUploadStatus('success');
-            } else {
-                console.error("Missing sessionId or token");
-                setUploadStatus('error');
-            }
-          } catch (error) {
+    let uploadSuccessful = true;
+
+    if (isRecording) {
+      const durationInSeconds = (performance.now() - recordingStartTimeRef.current) / 1000;
+      const audioBlob = await stopRecording();
+
+      if (audioBlob.size > 0) {
+        setIsUploading(true);
+        setUploadStatus('idle');
+        try {
+          const mimeType = audioBlob.type;
+          const format = mimeType.split('/')[1]?.split(';')[0] || 'webm';
+          if (sessionId && token) {
+            const metadata = {
+              sessionId: sessionId,
+              datasetId: datasetId,
+              phraseId: currentPhrase.id,
+              duration: durationInSeconds,
+              recordedAt: new Date().toISOString(),
+              emotionId: currentPhrase.emocaoid,
+              format: format,
+              blocoId: "1",
+              sampleRate: 48000,
+              fraseContent: currentPhrase?.text,
+            };
+            await uploadAudio(audioBlob, metadata, token, false);
+            setUploadStatus('success');
+          } else {
+            console.error("Missing sessionId or token");
             setUploadStatus('error');
-          } finally {
-            setIsUploading(false);
+            uploadSuccessful = false;
+            setUploadErrorMessage("Sessão ou token inválido. Faça o login novamente.");
+            setIsUploadErrorModalOpen(true);
           }
+        } catch (error: any) {
+          const metadata = {
+            sessionId: sessionId,
+            datasetId: datasetId,
+            phraseId: currentPhrase.id,
+            duration: durationInSeconds,
+            recordedAt: new Date().toISOString(),
+            emotionId: currentPhrase.emocaoid,
+            format: audioBlob.type.split('/')[1]?.split(';')[0] || 'webm',
+            blocoId: "1",
+            sampleRate: 48000,
+            fraseContent: currentPhrase?.text,
+          };
+          setPendingUpload({ audioBlob, metadata });
+          setUploadStatus('error');
+          uploadSuccessful = false;
+          setUploadErrorMessage(error.message || 'Ocorreu um erro desconhecido durante o upload.');
+          setIsUploadErrorModalOpen(true);
+        } finally {
+          setIsUploading(false);
         }
       }
+    }
 
+    if (uploadSuccessful) {
       await triggerNextPhrase();
+    }
+
+    setIsProcessing(false);
+  };
+
+  const retryUpload = async () => {
+    if (!pendingUpload || !token) return;
+
+    setIsUploadErrorModalOpen(false);
+    setIsUploading(true);
+    setUploadStatus('idle');
+
+    try {
+      await uploadAudio(pendingUpload.audioBlob, pendingUpload.metadata, token, false);
+      setUploadStatus('success');
+      setPendingUpload(null); 
+      await triggerNextPhrase(); 
+    } catch (error: any) {
+      setUploadStatus('error');
+      setUploadErrorMessage(error.message || 'A tentativa de reenvio falhou.');
+      setIsUploadErrorModalOpen(true); 
     } finally {
-      setIsProcessing(false);
+      setIsUploading(false);
     }
   };
   
@@ -1015,13 +1096,13 @@ const RecordingPage: React.FC = () => {
       } catch (error) {
         console.error("Failed to finish session:", error);
       } finally {
-        localStorage.removeItem('session_id');
+        localStorage.removeItem('active_session');
         localStorage.removeItem('recording_progress');
         setFinalizationStep('idle');
         setOpenFinishModal(true);
       }
     } else {
-      localStorage.removeItem('session_id');
+      localStorage.removeItem('active_session');
       localStorage.removeItem('recording_progress');
       navigate('/');
     }
@@ -1114,16 +1195,14 @@ const RecordingPage: React.FC = () => {
           notes: "cancelada",
         }, token);
       } catch (error) {
-        console.error("Failed to finish session:", error);
+        console.error("Failed to cancel session:", error);
       } finally {
-        localStorage.removeItem('session_id');
-        localStorage.removeItem('datasetId');
+        localStorage.removeItem('active_session');
         localStorage.removeItem('recording_progress');
         navigate('/');
       }
     } else {
-      localStorage.removeItem('session_id');
-      localStorage.removeItem('datasetId');
+      localStorage.removeItem('active_session');
       localStorage.removeItem('recording_progress');
       navigate('/');
     }
@@ -1289,7 +1368,6 @@ const RecordingPage: React.FC = () => {
             onClick={handleFinish} 
             variant="contained" 
             sx={{ mt: 2 }}
-            disabled={!sessionNotes.trim()}
           >
             Finalizar Sessão
           </Button>
@@ -1329,10 +1407,10 @@ const RecordingPage: React.FC = () => {
         <Box sx={modalStyle}>
           <Typography variant="h6" component="h2" textAlign="center">Sessão Existente</Typography>
           <Typography sx={{ mt: 2, textAlign: 'center' }}>
-            Você já tem uma sessão aberta.
+            Você já tem uma sessão aberta em outro dataset. Você será redirecionado.
           </Typography>
           <Box mt={3} display="flex" justifyContent="center">
-            <Button onClick={() => setShowExistingSessionModal(false)} variant="contained">
+            <Button onClick={handleRedirectToExistingSession} variant="contained">
               Retornar à sessão
             </Button>
           </Box>
@@ -1351,6 +1429,20 @@ const RecordingPage: React.FC = () => {
             </Button>
             <Button onClick={confirmCancelSession} variant="contained" color="error">
               Confirmar
+            </Button>
+          </Box>
+        </Box>
+      </Modal>
+
+      <Modal open={isUploadErrorModalOpen} onClose={() => setIsUploadErrorModalOpen(false)}>
+        <Box sx={modalStyle}>
+          <Typography variant="h6" component="h2" textAlign="center">Erro no Upload</Typography>
+          <Typography sx={{ mt: 2, textAlign: 'center', color: 'error.main' }}>
+            {uploadErrorMessage}
+          </Typography>
+          <Box mt={3} display="flex" justifyContent="center">
+            <Button onClick={retryUpload} variant="contained">
+              Tentar Novamente
             </Button>
           </Box>
         </Box>
