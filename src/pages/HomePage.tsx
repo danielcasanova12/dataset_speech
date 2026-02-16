@@ -5,86 +5,20 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
-import { api } from '../services/api';
-
-const datasetNames: { [key: number]: string } = {
-  1: "Dataset voz geral",
-  2: "Dataset canto",
-  3: "Dataset emoção",
-};
+import { DATASETS } from '../datasets';
 
 const HomePage: React.FC = () => {
-  const [datasets, setDatasets] = useState<number[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const { isAuthenticated, logout, token } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
+  const { isAuthenticated, logout } = useAuth();
   const { mode, toggleTheme } = useTheme();
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [activeDatasetId, setActiveDatasetId] = useState<string | null>(null);
-
+  
+  // Limpa a sessão legada ao carregar a página para evitar conflitos
   useEffect(() => {
-    const sessionId = localStorage.getItem('session_id');
-    const datasetId = localStorage.getItem('datasetId');
-    if (sessionId && datasetId) {
-      setActiveSessionId(sessionId);
-      setActiveDatasetId(datasetId);
-    }
-  }, []);
-
-  const clearSession = async () => {
-    if (activeSessionId && token) {
-      try {
-        await api.patch(`/sessions/${activeSessionId}/finish`, {
-          finished_at: new Date().toISOString(),
-          notes: "cancelada",
-        }, token);
-      } catch (error) {
-        console.error("Failed to finish session:", error);
-      }
-    }
     localStorage.removeItem('session_id');
     localStorage.removeItem('datasetId');
     localStorage.removeItem('recording_progress');
-    setActiveSessionId(null);
-    setActiveDatasetId(null);
-  };
-
-  useEffect(() => {
-    const fetchDatasets = async () => {
-      try {
-        const response = await fetch(`${process.env.PUBLIC_URL}/phrases_leitura.csv`);
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const csvText = await response.text();
-        
-        const lines = csvText.trim().split('\n');
-        const header = lines[0].split(',').map(h => h.trim());
-        const datasetidIndex = header.indexOf('datasetId');
-
-        if (datasetidIndex === -1) {
-            throw new Error("'datasetId' column not found in phrases_leitura.csv");
-        }
-
-        const datasetIds = lines.slice(1).map(line => {
-          const values = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
-          // Ensure value exists before parsing
-          if (values && values[datasetidIndex]) {
-            return parseInt(values[datasetidIndex], 10);
-          }
-          return null;
-        }).filter((id): id is number => id !== null);
-
-        const uniqueDatasets = Array.from(new Set(datasetIds)).sort((a, b) => a - b);
-        setDatasets(uniqueDatasets);
-      } catch (error) {
-        console.error("Failed to load datasets:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchDatasets();
   }, []);
+
 
   return (
     <Container>
@@ -107,28 +41,6 @@ const HomePage: React.FC = () => {
 
         {isAuthenticated ? (
             <>
-                {activeSessionId && activeDatasetId && (
-                  <Box sx={{ mb: 2 }}>
-                    <Button
-                      variant="contained"
-                      color="secondary"
-                      component={Link}
-                      to={`/recording/${activeDatasetId}`}
-                      size="large"
-                      sx={{ mr: 2 }}
-                    >
-                      Voltar para a sessão
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      color="warning"
-                      onClick={clearSession}
-                      size="large"
-                    >
-                      Limpar Sessão
-                    </Button>
-                  </Box>
-                )}
                 <Typography variant="h5" component="h2" sx={{ mb: 4 }}>
                 Selecione o Dataset
                 </Typography>
@@ -136,16 +48,16 @@ const HomePage: React.FC = () => {
                 <CircularProgress />
                 ) : (
                 <Grid container spacing={2} justifyContent="center" sx={{ mb: 4 }}>
-                    {datasets.map(datasetId => (
-                    <Grid item key={datasetId}>
+                    {DATASETS.map(dataset => (
+                    <Grid item key={dataset.frontendId}>
                         <Button
                         variant="contained"
                         color="primary"
                         component={Link}
-                        to={`/recording/${datasetId}`}
+                        to={`/recording/${dataset.frontendId}`}
                         size="large"
                         >
-                        {datasetNames[datasetId] || `Dataset ${datasetId}`}
+                        {dataset.name}
                         </Button>
                     </Grid>
                     ))}

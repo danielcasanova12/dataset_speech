@@ -21,7 +21,7 @@ interface VoiceSampleScreenProps {
   onStartRecording: () => void;
   onStopRecording: () => void;
   onPlay: () => void;
-  onContinue: () => void;
+  onSampleRecorded: (audioUrl: string) => void; 
   onPlaybackEnded: () => void;
 }
 
@@ -31,7 +31,7 @@ const VoiceSampleScreen: React.FC<VoiceSampleScreenProps> = ({
   onStartRecording,
   onStopRecording,
   onPlay,
-  onContinue,
+  onSampleRecorded,
   onPlaybackEnded,
 }) => {
   return (
@@ -74,7 +74,7 @@ const VoiceSampleScreen: React.FC<VoiceSampleScreenProps> = ({
                 </Button>
               </Grid>
               <Grid item>
-                <Button variant="contained" color="primary" onClick={onContinue} disabled={!audioUrl}>
+                <Button variant="contained" color="primary" onClick={() => onSampleRecorded(audioUrl!)} disabled={!audioUrl}>
                   Continuar
                 </Button>
               </Grid>

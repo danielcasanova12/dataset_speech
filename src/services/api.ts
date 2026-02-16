@@ -36,11 +36,16 @@ export interface LoginResponse {
 }
 
 export interface SessionResponse {
-  id: string; // Assuming session response has an ID
-  dataset_id: string;
-  saude: boolean;
+  id: number;
+  user_id: string;
+  dataset_id: number;
+  started_at: string; // ou Date, se você for converter
+  finished_at: string | null; // ou Date | null
+  notes: string | null;
+  vocal_health_note: string | null;
   termos: boolean;
-  // Add other fields if returned
+  status: 'active' | 'cancelada' | 'finalizada';
+  numero_frase: number;
 }
 
 export interface RecordingResponse {
@@ -100,7 +105,7 @@ export const api = {
     }
   },
 
-  createSession: async (dataset_id: string, termos: boolean, token: string): Promise<SessionResponse> => {
+  createSession: async (dataset_id: number, termos: boolean, token: string): Promise<SessionResponse> => {
     const response = await fetch(`${API_BASE_URL}/api/v1/sessions`, {
       method: 'POST',
       headers: {
@@ -112,12 +117,12 @@ export const api = {
 
     if (!response.ok) {
         const errorData = await response.json();
-        if (response.status === 409) {
-            // Throw a structured error for 409 conflicts
-            throw new Error(JSON.stringify({
-                message: errorData.detail.message,
-                session_id: errorData.detail.session_id
-            }));
+        // Se uma sessão ativa já existe, o backend retorna 409 com os detalhes
+        if (response.status === 409 && errorData.detail && errorData.detail.session) {
+            // Lança um erro customizado que a UI pode capturar
+            const error = new Error(errorData.detail.message) as any;
+            error.session = errorData.detail.session; // Anexa a sessão existente ao erro
+            throw error;
         }
         throw new Error(errorData.detail || 'Failed to create session');
     }
@@ -200,6 +205,24 @@ export const api = {
     if (!response.ok) {
       const errorData = await response.json();
       throw new Error(errorData.detail || `Failed to patch ${path}`);
+    }
+
+    return response.json();
+  },
+
+  put: async (path: string, data: any, token: string): Promise<any> => {
+    const response = await fetch(`${API_BASE_URL}/api/v1${path}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || `Failed to PUT ${path}`);
     }
 
     return response.json();
