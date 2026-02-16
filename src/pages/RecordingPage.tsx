@@ -38,7 +38,7 @@ const RecordingPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   
   const [isProcessing, setIsProcessing] = useState(false);
-  const [finalizationStep, setFinalizationStep] = useState<'idle' | 'notes'>('idle');
+  const [finalizationStep, setFinalizationStep] = useState<'idle' | 'notes' | 'finalRoomTone'>('idle');
   const [sessionNotes, setSessionNotes] = useState('');
   const [openFinishModal, setOpenFinishModal] = useState(false);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
@@ -321,7 +321,7 @@ const RecordingPage: React.FC = () => {
             setCurrentPhraseIndex(nextPhraseIndex);
             startRecording(); 
           } else {
-            setFinalizationStep('notes');
+            setFinalizationStep('finalRoomTone');
           }
         } catch (error) {
             console.error("Failed to advance phrase:", error);
@@ -481,7 +481,7 @@ const RecordingPage: React.FC = () => {
             setCurrentPhraseIndex(nextPhraseIndex);
             startRecording(); 
         } else {
-            setFinalizationStep('notes');
+            setFinalizationStep('finalRoomTone');
         }
     } catch (error) {
         console.error("Failed to advance phrase:", error);
@@ -626,6 +626,10 @@ const RecordingPage: React.FC = () => {
             </Box>
           </Box>
         </>
+      )}
+
+      {finalizationStep === 'finalRoomTone' && (
+        <RoomToneScreen onRecordingComplete={() => setFinalizationStep('notes')} />
       )}
 
       <Modal open={finalizationStep === 'notes'} onClose={() => setFinalizationStep('idle')}>

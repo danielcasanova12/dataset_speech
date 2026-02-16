@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button, Typography, Container, Box, CircularProgress, Grid, IconButton } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
 import { DATASETS } from '../datasets';
+import { api } from '../services/api';
 
 const HomePage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
-  const { isAuthenticated, logout } = useAuth();
+  const { isAuthenticated, logout, token } = useAuth();
   const { mode, toggleTheme } = useTheme();
+  const navigate = useNavigate();
   
   // Limpa a sessão legada ao carregar a página para evitar conflitos
   useEffect(() => {
@@ -19,6 +21,23 @@ const HomePage: React.FC = () => {
     localStorage.removeItem('recording_progress');
   }, []);
 
+
+  const handleDatasetClick = async (dataset: any) => {
+    if (!token) return;
+    setIsLoading(true);
+    try {
+      const newSession = await api.createSession(dataset.backendId, true, token);
+      navigate(`/recording/${dataset.frontendId}`, { state: { sessionToResume: newSession } });
+    } catch (error: any) {
+      if (error.session) {
+        navigate(`/recording/${dataset.frontendId}`, { state: { sessionToResume: error.session } });
+      } else {
+        console.error("Failed to create session:", error);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <Container>
@@ -53,9 +72,9 @@ const HomePage: React.FC = () => {
                         <Button
                         variant="contained"
                         color="primary"
-                        component={Link}
-                        to={`/recording/${dataset.frontendId}`}
+                        onClick={() => handleDatasetClick(dataset)}
                         size="large"
+                        disabled={isLoading}
                         >
                         {dataset.name}
                         </Button>
