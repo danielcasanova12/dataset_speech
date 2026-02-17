@@ -10,6 +10,7 @@ import { api, SessionResponse } from '../services/api';
 import { findByFrontendId, findByBackendId } from '../datasets';
 
 interface Phrase { id: number; text: string; blockId: number; videoSrc?: string; }
+interface Block { blockId: number; name: string; }
 
 const modalStyle = { position: 'absolute' as 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 400, bgcolor: 'background.paper', border: '2px solid #000', boxShadow: 24, p: 4 };
 
@@ -51,6 +52,7 @@ const RecordingPage: React.FC = () => {
   const { token } = useAuth();
   
   const [phrases, setPhrases] = useState<Phrase[]>([]);
+  const [blocks, setBlocks] = useState<Block[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentPhraseIndex, setCurrentPhraseIndex] = useState(0);
   const [session, setSession] = useState<SessionResponse | null>(null);
@@ -64,8 +66,13 @@ const RecordingPage: React.FC = () => {
   const [openFinishModal, setOpenFinishModal] = useState(false);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [showNoPhrasesModal, setShowNoPhrasesModal] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const MAX_RETRIES = 3;
 
   const [preRecordingStep, setPreRecordingStep] = useState<'voiceCheck' | 'voiceSample' | 'roomTone' | 'recording' | 'idle'>('idle'); 
+  const [postRecordingStep, setPostRecordingStep] = useState<'idle' | 'roomTone'>('idle');
+  const [roomToneCountdown, setRoomToneCountdown] = useState<number | null>(null);
   const [voiceSampleUrl, setVoiceSampleUrl] = useState<string | null>(null);
   const [voiceSampleStep, setVoiceSampleStep] = useState<'ready' | 'recording' | 'recorded' | 'playing'>('ready');
 
@@ -77,8 +84,11 @@ const RecordingPage: React.FC = () => {
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
   const [tooltipConfig, setTooltipConfig] = useState<{ open: boolean; text: string; top: number; left: number; arrowTop?: string | number; }>({ open: false, text: '', top: 0, left: 0 });
   const isTutorialActive = tutorialStep !== null;
+  const [showBlockTutorialModal, setShowBlockTutorialModal] = useState(false);
+  const [blockTutorialContent, setBlockTutorialContent] = useState('');
 
   const sessionCreationLock = useRef(false);
+  const previousBlockIdRef = useRef<number | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaRecorderSampleRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]); 
@@ -237,6 +247,10 @@ const RecordingPage: React.FC = () => {
         setIsLoading(false);
         return;
       }
+
+      if (retryCount === 0) {
+        setError(null); // Clear previous errors on a new attempt
+      }
       
       const frontendId = parseInt(datasetId, 10);
       const datasetInfo = findByFrontendId(frontendId);
@@ -249,32 +263,60 @@ const RecordingPage: React.FC = () => {
       sessionCreationLock.current = true;
       setIsLoading(true);
       
+      let caughtError: any = null;
       try {
         const newSession = await api.createSession(datasetInfo.backendId, true, token);
         setSession(newSession);
         setCurrentPhraseIndex(0);
         setPreRecordingStep('voiceCheck');
+        setRetryCount(0); // Reset retry count on success
       } catch (error: any) {
+        caughtError = error;
         if (error.session) {
           setExistingSessionInfo(error.session as SessionResponse);
           setShowExistingSessionModal(true);
+          setRetryCount(0); // Reset retry count for existing session case
+        } else if (retryCount < MAX_RETRIES) {
+          console.warn(`Session creation failed, retrying (${retryCount + 1}/${MAX_RETRIES})...`, error);
+          setRetryCount(prev => prev + 1);
+          setTimeout(() => createOrResumeSession(), 1000); // Retry after 1 second
         } else {
-          console.error("Failed to create session:", error);
-          setError("Não foi possível iniciar a sessão. Por favor, tente novamente mais tarde.");
+          console.error("Failed to create session after multiple retries:", error);
+          setError("Não foi possível iniciar a sessão após várias tentativas. Por favor, tente novamente mais tarde.");
         }
       } finally {
-        setIsLoading(false); 
+        if (retryCount >= MAX_RETRIES || caughtError?.session) { // Only stop loading if retries exhausted or session exists
+          setIsLoading(false); 
+        }
         sessionCreationLock.current = false;
       }
     };
     createOrResumeSession();
-  }, [token, datasetId, navigate, location.state, session]);
+  }, [token, datasetId, navigate, location.state, session, retryCount]);
+
+  useEffect(() => {
+    const fetchBlockData = async () => {
+      try {
+        const response = await fetch(`${process.env.PUBLIC_URL}/block.csv`);
+        const text = await response.text();
+        const lines = text.trim().split('\n').slice(1);
+        const blockData: Block[] = lines.map(line => {
+          const [blockId, name] = line.split(',');
+          return { blockId: parseInt(blockId), name: name.replace(/"/g, '') };
+        });
+        setBlocks(blockData);
+      } catch (error) {
+        console.error("Failed to load block.csv:", error);
+      }
+    };
+    fetchBlockData();
+  }, []);
   
   useEffect(() => {
-    if (preRecordingStep === 'recording' && !isRecording && !isUIPaused) {
+    if (preRecordingStep === 'recording' && !isRecording && !isUIPaused && !showBlockTutorialModal) {
       startRecording();
     }
-  }, [preRecordingStep, isRecording, isUIPaused, startRecording]);
+  }, [preRecordingStep, isRecording, isUIPaused, startRecording, showBlockTutorialModal]);
 
   useEffect(() => {
     const fetchCsvData = async () => {
@@ -294,6 +336,9 @@ const RecordingPage: React.FC = () => {
           return { id: parseInt(id), text: phraseText, blockId: parseInt(blockId), videoSrc: videoSrc };
         });
         setPhrases(data);
+        if (data.length === 0) {
+          setShowNoPhrasesModal(true);
+        }
       } catch (error) {
         console.error("Failed to load CSV:", error);
       } finally {
@@ -303,6 +348,20 @@ const RecordingPage: React.FC = () => {
     fetchCsvData();
   }, [session]);
 
+  useEffect(() => {
+    if (phrases.length > 0 && blocks.length > 0) {
+        const currentBlockId = phrases[currentPhraseIndex].blockId;
+        if (previousBlockIdRef.current !== null && previousBlockIdRef.current !== currentBlockId) {
+            const blockInfo = blocks.find(b => b.blockId === currentBlockId);
+            if (blockInfo) {
+                setBlockTutorialContent(blockInfo.name);
+                setShowBlockTutorialModal(true);
+            }
+        }
+        previousBlockIdRef.current = currentBlockId;
+    }
+  }, [currentPhraseIndex, phrases, blocks]);
+
   const handleNextTutorialStep = useCallback(() => {
     if (tutorialStep === 3) {
       setTutorialStep(null);
@@ -311,6 +370,61 @@ const RecordingPage: React.FC = () => {
       setTutorialStep(prev => (prev === null ? null : prev + 1));
     }
   }, [tutorialStep, startRecording]);
+
+  useEffect(() => {
+    if (!isTutorialActive) {
+      setTooltipConfig({ open: false, text: '', top: 0, left: 0 });
+      return;
+    }
+  
+    let config = { open: true, text: '', top: 0, left: 0, arrowTop: '50%' };
+    
+    const calculateTooltipPosition = () => {
+        switch (tutorialStep) {
+            case 0:
+                const phraseRect = phraseTextRef.current?.getBoundingClientRect();
+                if (phraseRect) {
+                    config.text = "Leia a frase em voz alta e clara.";
+                    config.top = phraseRect.top + phraseRect.height / 2;
+                    config.left = phraseRect.right + 20;
+                }
+                break;
+            case 1:
+                const saveRect = saveButtonRef.current?.getBoundingClientRect();
+                if (saveRect) {
+                    config.text = "Clique aqui quando terminar de falar.";
+                    config.top = saveRect.top + saveRect.height / 2;
+                    config.left = saveRect.right + 20;
+                }
+                break;
+            case 2:
+                const skipRect = skipButtonRef.current?.getBoundingClientRect();
+                if (skipRect) {
+                    config.text = "Use este botão se quiser pular a frase atual.";
+                    config.top = skipRect.top + skipRect.height / 2;
+                    config.left = skipRect.right + 20;
+                }
+                break;
+            case 3:
+                const timerRect = timerElementRef.current?.getBoundingClientRect();
+                if (timerRect) {
+                    config.text = "Fique de olho no tempo e no medidor de volume. Tudo pronto para começar?";
+                    config.top = timerRect.top + timerRect.height / 2;
+                    config.left = timerRect.right + 20;
+                }
+                break;
+            default:
+                config.open = false;
+        }
+        setTooltipConfig(config);
+    };
+
+    // Delay calculation to ensure elements are rendered
+    const timeoutId = setTimeout(calculateTooltipPosition, 100);
+
+    return () => clearTimeout(timeoutId);
+
+  }, [tutorialStep, isTutorialActive]);
 
   const processPhraseChange = useCallback(async (skip = false) => {
     if (!session || !token) return;
@@ -381,7 +495,7 @@ const RecordingPage: React.FC = () => {
             setCurrentPhraseIndex(nextPhraseIndex);
             startRecording(); // Call startRecording explicitly here
           } else {
-            setFinalizationStep('notes');
+            setPostRecordingStep('roomTone');
           }
         } catch (error) {
             console.error("Failed to advance phrase (countdown end):", error);
@@ -409,6 +523,23 @@ const RecordingPage: React.FC = () => {
       if (timerIntervalId.current) clearInterval(timerIntervalId.current);
     };
   }, [isRecording, isUIPaused]);
+
+  useEffect(() => {
+    if (postRecordingStep === 'roomTone') {
+      startRecording();
+      setRoomToneCountdown(5);
+      const countdownInterval = setInterval(() => {
+        setRoomToneCountdown(prev => (prev !== null ? prev - 1 : null));
+      }, 1000);
+
+      setTimeout(() => {
+        clearInterval(countdownInterval);
+        stopRecording();
+        setPostRecordingStep('idle');
+        setFinalizationStep('notes');
+      }, 5000);
+    }
+  }, [postRecordingStep, startRecording, stopRecording]);
   
   const handleNextPhrase = () => processPhraseChange(false);
   const handleSkipPhrase = () => processPhraseChange(true);
@@ -426,20 +557,42 @@ const RecordingPage: React.FC = () => {
   const handleCancelAndCreateNewSession = useCallback(async () => {
     if (existingSessionInfo && token && datasetId) {
       try {
+        setIsLoading(true);
         const finished_at = new Date().toISOString();
         await api.put(`/sessions/${existingSessionInfo.id}`, { ...existingSessionInfo, status: "cancelada", finished_at }, token);
         
         setShowExistingSessionModal(false);
         setExistingSessionInfo(null);
-        setSession(null); // Reset session state to trigger re-creation
         
+        const frontendId = parseInt(datasetId, 10);
+        const datasetInfo = findByFrontendId(frontendId);
+        if (!datasetInfo) {
+          setError("Dataset não encontrado.");
+          setIsLoading(false);
+          return;
+        }
+
+        const newSession = await api.createSession(datasetInfo.backendId, true, token);
+        setSession(newSession);
+        setCurrentPhraseIndex(0);
+        setPreRecordingStep('voiceCheck');
       } catch (error) {
         console.error("Failed to cancel and create new session:", error);
         setError("Ocorreu um erro ao criar uma nova sessão.");
+      } finally {
         setIsLoading(false);
       }
     }
-  }, [existingSessionInfo, token, datasetId, setIsLoading, setError, setExistingSessionInfo, setSession]);
+  }, [existingSessionInfo, token, datasetId, setIsLoading, setError, setExistingSessionInfo, setSession, setCurrentPhraseIndex, setPreRecordingStep, setShowExistingSessionModal]);
+
+  const handleResumeOrCreateSession = () => {
+    if (existingSessionInfo) {
+      handleResumeSession();
+    } else {
+      setPreRecordingStep('voiceCheck');
+    }
+    setShowNoPhrasesModal(false);
+  };
 
   const confirmCancelSession = async () => {
     if (session && token) {
@@ -545,6 +698,25 @@ const RecordingPage: React.FC = () => {
 
   return (
     <Container maxWidth="lg">
+      <Modal open={showNoPhrasesModal}>
+        <Box sx={modalStyle}>
+          <Typography variant="h6">Sessão não iniciada</Typography>
+          <Typography sx={{ mt: 2 }}>
+            {existingSessionInfo
+              ? "Deseja voltar para a sessão anterior?"
+              : "Como está sua voz hoje?"}
+          </Typography>
+          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between' }}>
+            <Button onClick={handleResumeOrCreateSession} variant="contained">
+              {existingSessionInfo ? "Voltar para sessão" : "Iniciar nova sessão"}
+            </Button>
+            <Button onClick={() => {
+              setShowNoPhrasesModal(false);
+              navigate('/');
+            }} variant="outlined">Cancelar</Button>
+          </Box>
+        </Box>
+      </Modal>
       <Modal open={showExistingSessionModal}>
         <Box sx={modalStyle}>
           <Typography variant="h6">Sessão Ativa Encontrada</Typography>
@@ -560,10 +732,12 @@ const RecordingPage: React.FC = () => {
       <Modal open={isCancelModalOpen} onClose={() => setIsCancelModalOpen(false)}>
         <Box sx={modalStyle}>
           <Typography variant="h6">Cancelar Sessão</Typography>
-          <Typography sx={{ mt: 2 }}>Tem certeza que deseja cancelar esta sessão?</Typography>
+          <Typography sx={{ mt: 2 }}>
+            Tem certeza que deseja cancelar esta sessão? Todo o seu progresso será perdido.
+          </Typography>
           <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between' }}>
-            <Button onClick={() => setIsCancelModalOpen(false)}>Voltar</Button>
-            <Button onClick={confirmCancelSession} color="error">Cancelar</Button>
+            <Button onClick={() => setIsCancelModalOpen(false)}>Não, Voltar</Button>
+            <Button onClick={confirmCancelSession} color="error">Sim, Cancelar</Button>
           </Box>
         </Box>
       </Modal>
@@ -615,7 +789,18 @@ const RecordingPage: React.FC = () => {
                 </Box>
               </Paper>
             ) : (
-              isLoading ? <CircularProgress /> : <Typography>Nenhuma frase encontrada para este dataset.</Typography>
+              isLoading ? <CircularProgress /> : (
+              <Box sx={{
+                backgroundColor: 'black',
+                width: '100%',
+                minHeight: 'calc(100vh - 300px)', // Adjust as needed
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center'
+              }}>
+                {/* Modal will appear on top */}
+              </Box>
+            )
             )}
 
             <Box mt={2} display="flex" justifyContent="center">
@@ -650,6 +835,27 @@ const RecordingPage: React.FC = () => {
         <Box sx={modalStyle}>
           <Typography variant="h6">Sessão Finalizada!</Typography>
           <Button component={Link} to="/">Voltar para Home</Button>
+        </Box>
+      </Modal>
+
+      <Modal open={showBlockTutorialModal}>
+        <Box sx={modalStyle}>
+          <Typography variant="h6">Instruções do Bloco</Typography>
+          <Typography sx={{ mt: 2 }}>{blockTutorialContent}</Typography>
+          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
+            <Button onClick={() => setShowBlockTutorialModal(false)} variant="contained">
+              Entendi
+            </Button>
+          </Box>
+        </Box>
+      </Modal>
+
+      <Modal open={postRecordingStep === 'roomTone'}>
+        <Box sx={modalStyle}>
+          <Typography variant="h6">Gravando som ambiente</Typography>
+          <Typography sx={{ mt: 2 }}>
+            Por favor, permaneça em silêncio por {roomToneCountdown} segundos.
+          </Typography>
         </Box>
       </Modal>
     </Container>
