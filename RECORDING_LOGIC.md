@@ -1,86 +1,579 @@
-# Análise Detalhada da Lógica de Gravação: `RecordingPage.tsx`
+import React, { useState, useRef, useEffect } from 'react';
+import { Button, Typography, Container, Paper, Box, Modal, Card, CardContent, CircularProgress } from '@mui/material';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
+import ConsentScreen from '../components/ConsentScreen';
 
-Este documento detalha o fluxo de controle, gerenciamento de estado e lógica de áudio do componente `RecordingPage.tsx`.
+const datasetNames: { [key: number]: string } = {
+  1: "Dataset voz geral",
+  2: "Dataset canto",
+  3: "Dataset emoção",
+};
 
-## 1. Visão Geral
+interface Phrase {
+  id: number; emocaoid: number; datasetid: number; text: string; videoSrc?: string;
+}
 
-O objetivo deste componente é permitir que um usuário grave uma série de frases de áudio. Ele gerencia o estado da sessão, a gravação de áudio, a visualização da forma de onda e o fluxo de navegação entre as frases.
+const resolveVideoSrc = (src?: string): string | undefined => {
+  if (!src) return undefined;
+  const trimmed = src.trim();
+  if (!trimmed) return undefined;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
 
-## 2. Gerenciamento de Estado Principal
+  const base = (process.env.PUBLIC_URL || '').replace(/\/$/, '');
+  if (trimmed.startsWith('/')) return `${base}${trimmed}`;
+  return `${base}/${trimmed}`;
+};
 
-A lógica do componente é controlada por várias variáveis de estado do React:
+const modalStyle = {
+  position: 'absolute' as 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+  width: 400, bgcolor: 'background.paper', border: '2px solid #000', boxShadow: 24, p: 4,
+};
 
--   **`session`**: Armazena os dados da sessão de gravação atual, obtidos da API.
--   **`currentPhraseIndex`**: Um número que rastreia qual frase da lista o usuário está gravando no momento.
--   **`preRecordingStep`**: Controla as etapas preliminares antes do início da gravação principal (por exemplo, `'voiceCheck'`, `'roomTone'`, `'recording'`).
--   **`isRecording`**: Um booleano que indica se o microfone está capturando áudio ativamente. É o principal gatilho para a visualização.
--   **`countdown`**: Um número que, quando não é nulo, exibe uma contagem regressiva na tela.
--   **`isProcessing`**: Um booleano para desabilitar botões e fornecer feedback visual (como um spinner) durante operações assíncronas (por exemplo, salvar uma frase).
+const TutorialTooltip: React.FC<{ text: string; top: number; left: number; onNext: () => void; arrowTop?: string | number; }> = ({
+  text,
+  top,
+  left,
+  onNext,
+  arrowTop = '50%',
+}) => (
+  <Box
+    sx={{
+      position: 'fixed',
+      top,
+      left,
+      zIndex: 1400,
+      transform: 'translateY(-50%)',
+    }}
+  >
+    <Paper
+      elevation={6}
+      sx={{
+        position: 'relative',
+        p: 2,
+        maxWidth: 260,
+        bgcolor: 'background.paper',
+        borderRadius: 2,
+      }}
+    >
+      <Typography variant="body2" sx={{ mb: 2 }}>
+        {text}
+      </Typography>
+      <Button onClick={onNext} variant="contained" size="small">
+        Próximo
+      </Button>
 
-### Refs para APIs do Navegador
+      {/* Seta azul apontando para a ESQUERDA */}
+      <Box
+        sx={{
+          position: 'absolute',
+          top: arrowTop,
+          left: 0,
+          transform: 'translate(-100%, -50%)',
+          width: 0,
+          height: 0,
+          borderTop: '10px solid transparent',
+          borderBottom: '10px solid transparent',
+          borderRight: '10px solid #1976d2',
+        }}
+      />
+    </Paper>
+  </Box>
+);
 
--   **`streamRef`**: Mantém o objeto `MediaStream` do microfone do usuário.
--   **`mediaRecorderRef`**: Mantém a instância do `MediaRecorder`.
--   **`audioContextRef`**, **`analyserRef`**, **`sourceRef`**: Mantêm os nós da Web Audio API necessários para a visualização da forma de onda.
--   **`animationFrameId`**: Mantém o ID do `requestAnimationFrame` para que o loop de desenho da visualização possa ser cancelado.
+// --- MAIN COMPONENT ---
+const RecordingPage: React.FC = () => {
+  // --- STATE ---
+  const [phrases, setPhrases] = useState<Phrase[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [currentPhraseIndex, setCurrentPhraseIndex] = useState(0);
+  const [isRecording, setIsRecording] = useState(false);
+  const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
+  const [isCountdownModalOpen, setIsCountdownModalOpen] = useState(false);
+  const [openFinishModal, setOpenFinishModal] = useState(false);
+  const [timer, setTimer] = useState(0);
+  const [dbfs, setDbfs] = useState(-100);
+  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
+  const [isInitialPlayback, setIsInitialPlayback] = useState(false);
+  const [countdown, setCountdown] = useState(3);
+  const [consentModalOpen, setConsentModalOpen] = useState(true);
+  const [tutorialStep, setTutorialStep] = useState<number | null>(null);
+  const [tooltipConfig, setTooltipConfig] = useState<{ open: boolean; text: string; top: number; left: number; arrowTop?: string | number; }>({ open: false, text: '', top: 0, left: 0 });
+  const [currentCsvFile, setCurrentCsvFile] = useState('apresentacao.csv');
+  const [isTransitionModalOpen, setIsTransitionModalOpen] = useState(false);
+  const [isPhraseVisible, setIsPhraseVisible] = useState(true);
+  const [transitionMessage, setTransitionMessage] = useState({ title: '', body: '' });
 
-## 3. Fluxo de Execução Passo a Passo
+  // --- REFS ---
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const animationFrameId = useRef<number | null>(null);
+  const timerIntervalId = useRef<NodeJS.Timeout | null>(null);
+  const phraseTextRef = useRef<HTMLElement>(null);
+  const waveformRef = useRef<HTMLDivElement>(null);
+  const saveButtonRef = useRef<HTMLButtonElement>(null);
+  const timerRef = useRef<HTMLElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const ignoreButtonRef = useRef<HTMLButtonElement>(null);
+  const homeButtonRef = useRef<HTMLAnchorElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
-Este é o fluxo lógico desde o carregamento da página até a gravação de várias frases.
+  const currentPhrase = phrases[currentPhraseIndex];
+  const currentVideoSrc = resolveVideoSrc(currentPhrase?.videoSrc);
+  const hasVideo = !!currentVideoSrc;
 
-### Etapa 1: Carregamento e Iniciação da Sessão
+  // --- NAVIGATION & PARAMS ---
+  const navigate = useNavigate();
+  const { datasetId } = useParams<{ datasetId: string }>();
 
-1.  O componente é montado.
-2.  Um `useEffect` principal é acionado para criar ou retomar uma sessão.
-3.  **Se for uma nova sessão**: Ele faz uma chamada à API para criar uma nova sessão. Após o sucesso, ele define o estado `session` e ajusta `preRecordingStep` para `'voiceCheck'`.
-4.  **Se for uma sessão retomada** (vindo da página inicial): Ele obtém os dados da sessão do estado da navegação, define o estado `session` e `currentPhraseIndex`, e define `preRecordingStep` como `'recording'` para pular as verificações de áudio.
+  // --- EFFECTS ---
+  useEffect(() => {
+    setConsentModalOpen(true);
+  }, []);
 
-### Etapa 2: Etapas de Pré-Gravação
+  useEffect(() => {
+    if (!datasetId) return;
+    const fetchPhrases = async () => {
+      setIsLoading(true);
+      try {
+        const response = await fetch(`${process.env.PUBLIC_URL}/${currentCsvFile}`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const csvText = await response.text();
+        const lines = csvText.trim().split('\n');
+        const header = lines[0].split(',').map(h => h.trim());
+        const phraseData: Phrase[] = lines.slice(1).map(line => {
+            const values = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
+            return {
+                id: parseInt(values[header.indexOf('id')] || '0'),
+                emocaoid: parseInt(values[header.indexOf('emocaoId')] || '0'),
+                datasetid: parseInt(values[header.indexOf('datasetId')] || '0'),
+                text: values[header.indexOf('text')]?.replace(/"/g, '') || '',
+                videoSrc: values[header.indexOf('videoSrc')]?.replace(/"/g, '') || undefined,
+            };
+        });
+        
+        let filteredPhrases = phraseData;
+        if (currentCsvFile !== 'apresentacao.csv') {
+          filteredPhrases = phraseData.filter(p => p.datasetid.toString() === datasetId);
+        }
 
-1.  A interface do usuário renderiza os componentes para `'voiceCheck'`, `'voiceSample'`, e `'roomTone'` com base no estado `preRecordingStep`.
-2.  Quando todas as etapas são concluídas, `preRecordingStep` é finalmente definido como `'recording'`.
+        const uniquePhrases = filteredPhrases.filter((phrase, index, self) =>
+          index === self.findIndex(p =>
+            p.text === phrase.text &&
+            p.datasetid === phrase.datasetid &&
+            (p.videoSrc || '') === (phrase.videoSrc || '')
+          )
+        );
+        setPhrases(uniquePhrases);
+      } catch (error) {
+        console.error("Failed to load phrases:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchPhrases();
+  }, [datasetId, currentCsvFile]);
 
-### Etapa 3: O Loop de Gravação (Onde os Bugs Ocorriam)
+  useEffect(() => {
+    // Definição dos passos do tutorial com referências e textos.
+    const isReadingPart = currentCsvFile === 'phrases_leitura.csv';
 
-Este é o fluxo corrigido para garantir que a forma de onda funcione sempre.
+    const tutorialSteps = isReadingPart
+      ? [ // Tutorial simplificado para a parte de leitura
+        { ref: phraseTextRef, text: "Nesta parte, você só precisa ler a frase em voz alta.", arrowPosition: '50%' },
+        { ref: saveButtonRef, text: "Use este botão para salvar sua gravação e ir para a próxima frase.", arrowPosition: '50%' },
+      ]
+      : [ // Tutorial completo para a primeira parte
+        { ref: timerRef, text: "Aqui você verá quando começar a gravar e o tempo decorrido da gravação desta frase.", arrowPosition: '60%' },
+        { ref: phraseTextRef, text: "Quando começar a gravar, responda a esta pergunta em voz alta.", arrowPosition: '65%' },
+        { ref: ignoreButtonRef, text: "Caso não queira gravar o áudio para esta frase, use este botão para pular para a próxima.", arrowPosition: '65%' },
+        { ref: homeButtonRef, text: "A qualquer momento, você pode usar este botão para abandonar a sessão e voltar para a página inicial.", arrowPosition: '65%' },
+        { ref: saveButtonRef, text: "Use este botão para salvar sua gravação e ir para a próxima frase.", arrowPosition: '65%' },
+      ];
 
-1.  **Início da Gravação**:
-    *   Um `useEffect` monitora as alterações em `currentPhraseIndex` e `preRecordingStep`.
-    *   Quando `preRecordingStep` é `'recording'` e o `currentPhraseIndex` é válido, a função `startRecording()` é chamada.
-    *   `startRecording()` solicita acesso ao microfone, cria uma nova instância do `MediaRecorder` e define `isRecording` como `true`.
+    // Limpa o destaque de todos os elementos ao mudar de passo.
+    tutorialSteps.forEach(step => step.ref.current?.classList.remove('tutorial-highlight'));
 
-2.  **Início da Visualização**:
-    *   Um `useEffect` separado monitora a variável de estado `isRecording`.
-    *   Quando `isRecording` se torna `true`, este efeito chama a função `visualize()`.
-    *   `visualize()` constrói o pipeline da Web Audio API: ele cria um `AudioContext`, um `AnalyserNode` e um `MediaStreamAudioSourceNode` a partir do `streamRef`. **É crucial que o `sourceRef` seja destruído e recriado a cada nova gravação para evitar que a onda congele.**
-    *   Ele então inicia o loop de desenho com `requestAnimationFrame`.
+    if (tutorialStep !== null && tutorialStep < tutorialSteps.length) {
+      setTimeout(() => {
+        const { ref, text, arrowPosition } = tutorialSteps[tutorialStep];
+        if (ref.current) {
+          // Adiciona a classe de destaque ao elemento atual.
+          ref.current.classList.add('tutorial-highlight');
 
-3.  **Usuário Clica em "Salvar e Próxima"**:
-    *   A função `processPhraseChange()` é chamada.
-    *   **Ação Imediata**: `stopRecording()` é chamado. Isso interrompe o `MediaRecorder`, desconecta o `sourceRef` da Web Audio API e o anula (`sourceRef.current = null`), e cancela o `animationFrameId`. `isRecording` é definido como `false`.
-    *   `isProcessing` é definido como `true` para bloquear a interface do usuário.
-    *   O estado `countdown` é definido como `3`.
+          // Configura e exibe o tooltip.
+          const rect = ref.current.getBoundingClientRect();
+          setTooltipConfig({ open: true, text, top: rect.top + window.scrollY, left: rect.right + window.scrollX + 15, arrowTop: arrowPosition ?? (rect.height / 2) });
+        }
+      }, 100);
+    } else {
+      // Esconde o tooltip e finaliza o tutorial.
+      setTooltipConfig({ open: false, text: '', top: 0, left: 0 });
+      if (tutorialStep !== null) {
+        setTutorialStep(null);
+      }
+    }
 
-4.  **A Contagem Regressiva**:
-    *   Um `useEffect` que monitora `countdown` é acionado.
-    *   Ele espera 1 segundo e decrementa o valor.
-    *   **Quando `countdown` chega a 0**:
-        *   Ele chama a API para atualizar o `numero_frase` da sessão no backend.
-        *   Após o sucesso, ele atualiza o estado local `currentPhraseIndex` para o novo índice.
+    // Função de limpeza para remover o destaque quando o componente for desmontado.
+    return () => tutorialSteps.forEach(step => step.ref.current?.classList.remove('tutorial-highlight'));
+  }, [tutorialStep, currentCsvFile]);
 
-5.  **O Ciclo se Repete**:
-    *   Como `currentPhraseIndex` mudou, o `useEffect` da **Etapa 3.1** é acionado novamente, chamando `startRecording()` para a nova frase, o que, por sua vez, aciona o `useEffect` da **Etapa 3.2** para reiniciar a visualização.
+  useEffect(() => {
+    if (isRecording) {
+      timerIntervalId.current = setInterval(() => setTimer((prev) => prev + 1), 1000);
+      visualize();
+    } else {
+      if (timerIntervalId.current) clearInterval(timerIntervalId.current);
+      if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
+    }
+    return () => {
+      if (timerIntervalId.current) clearInterval(timerIntervalId.current);
+      if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
+    };
+  }, [isRecording]);
 
-## 4. Bugs Potenciais e Suas Soluções
+  // --- HANDLERS ---
+  const handleAcceptConsent = () => {
+    setConsentModalOpen(false);
+    setTutorialStep(0);
+  };
+  const handleDeclineConsent = () => navigate('/');
+  const handleNextTutorialStep = () => {
+    const isReadingPart = currentCsvFile === 'phrases_leitura.csv';
+    const isLastStep = tutorialStep === (isReadingPart ? 1 : 4);
 
-1.  **BUG: A Forma de Onda Congela Após a Primeira Gravação**
-    *   **Causa**: O `MediaStreamAudioSourceNode` (`sourceRef`) não estava sendo destruído e recriado corretamente. Uma vez que um `sourceRef` é desconectado, ele não pode ser simplesmente reconectado.
-    *   **Solução**: A função `stopRecording` deve definir explicitamente `sourceRef.current = null`. A função `visualize` deve então verificar se `sourceRef.current` é nulo e, se for, criar uma nova instância e conectá-la ao analisador.
+    if (isLastStep) {
+      setTutorialStep(null); // Finaliza o modo tutorial
+      handleNextPhrase();    // Executa a ação de ir para a próxima frase
+    } else {
+      setTutorialStep(prev => (prev === null ? 0 : prev + 1));
+    }
+  };
 
-2.  **BUG: Gravação Ocorre Durante a Contagem Regressiva**
-    *   **Causa**: Lógica de fluxo incorreta onde `startRecording` era chamado muito cedo, junto com o início da contagem regressiva.
-    *   **Solução**: Desacoplar completamente a contagem regressiva do início da gravação. A contagem regressiva apenas leva à atualização do `currentPhraseIndex`. Um `useEffect` separado, que monitora `currentPhraseIndex`, é o único responsável por chamar `startRecording`. Isso garante que a gravação só comece *após* a pausa ter terminado e o novo estado ter sido renderizado.
+  const isTutorialActive = tutorialStep !== null;
 
-3.  **BUG: "Variável usada antes da declaração"**
-    *   **Causa**: Em JavaScript, `useCallback` e `useEffect` criam "closures". Se uma função `A` depende de uma função `B`, `B` deve ser declarada antes de `A` para que esteja disponível no escopo quando `A` for definida.
-    *   **Solução**: Sempre defina as funções `useCallback` na ordem de sua dependência. Neste componente: `visualize` e `stopRecording` devem ser declarados antes de `startRecording`, que depende deles.
+  const triggerPhraseAction = (index: number, onReady: () => void) => {
+    const phrase = phrases[index];
+    if (!phrase) return;
+
+    const finalizeTransition = () => {
+      onReady();
+      if (!phrase.videoSrc) {
+        startRecording();
+      }
+    };
+
+    if (!phrase.videoSrc) {
+      setIsVideoPlaying(false);
+      setCountdown(3);
+      setIsCountdownModalOpen(true);
+      const countdownTimer = setInterval(() => {
+        setCountdown(prev => {
+          if (prev > 1) return prev - 1;
+          clearInterval(countdownTimer);
+          setIsCountdownModalOpen(false);
+          finalizeTransition();
+          return 0;
+        });
+      }, 1000);
+    } else {
+      setIsCountdownModalOpen(false);
+      finalizeTransition();
+    }
+  };
+
+  const handleNextPhrase = () => {
+    if (isRecording) stopRecording();
+    if (currentPhraseIndex < phrases.length - 1) {
+      const nextIndex = currentPhraseIndex + 1;
+      triggerPhraseAction(nextIndex, () => {
+        setCurrentPhraseIndex(nextIndex);
+        setAudioChunks([]);
+      });
+    } else {
+      if (currentCsvFile === 'apresentacao.csv') {
+        setTransitionMessage({
+          title: 'Você concluiu a apresentação!',
+          body: 'Agora vamos para a parte de leitura de frases.'
+        });
+        setIsTransitionModalOpen(true);
+      } else { // This will be phrases_leitura.csv
+        setOpenFinishModal(true);
+      }
+    }
+  };
+  
+  const handleIgnoreAndGoNext = () => {
+    if (isRecording) stopRecording();
+    if (currentPhraseIndex < phrases.length - 1) {
+      const nextIndex = currentPhraseIndex + 1;
+      triggerPhraseAction(nextIndex, () => {
+        setCurrentPhraseIndex(nextIndex);
+        setAudioChunks([]);
+      });
+    } else {
+      if (currentCsvFile === 'apresentacao.csv') {
+        setTransitionMessage({
+          title: 'Você concluiu a apresentação!',
+          body: 'Agora vamos para a parte de leitura de frases.'
+        });
+        setIsTransitionModalOpen(true);
+      } else { // This will be phrases_leitura.csv
+        setOpenFinishModal(true);
+      }
+    }
+  };
+
+  const handlePreviousPhrase = () => {
+    if (isRecording) stopRecording();
+    if (currentPhraseIndex > 0) {
+      const prevIndex = currentPhraseIndex - 1;
+      triggerPhraseAction(prevIndex, () => {
+        setCurrentPhraseIndex(prevIndex);
+        setAudioChunks([]);
+      });
+    }
+  };
+
+  const handleReplayVideo = () => {
+    if (isRecording) stopRecording();
+    if (hasVideo) playVideo();
+  };
+
+  const handleContinueToNextPart = () => {
+    setIsTransitionModalOpen(false);
+    if (currentCsvFile === 'apresentacao.csv') {
+      setCurrentCsvFile('phrases_leitura.csv');
+    }
+    setCurrentPhraseIndex(0);
+    setTutorialStep(0); // Reinicia o tutorial para a segunda parte
+  }
+
+  const startRecording = async () => {
+    try {
+      if (!audioContextRef.current) audioContextRef.current = new AudioContext();
+      if (!analyserRef.current) analyserRef.current = audioContextRef.current.createAnalyser();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      sourceRef.current = audioContextRef.current.createMediaStreamSource(stream);
+      sourceRef.current.connect(analyserRef.current);
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      mediaRecorderRef.current.ondataavailable = (event) => setAudioChunks((prev) => [...prev, event.data]);
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+      setTimer(0);
+    } catch (err) {
+      console.error("Failed to start recording:", err);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (sourceRef.current) sourceRef.current.disconnect();
+    }
+  };
+
+  const playVideo = (reload = false) => {
+    const videoElement = videoRef.current;
+    if (!videoElement) return;
+
+    if (reload) {
+      videoElement.load();
+    }
+
+    setIsVideoPlaying(true);
+    setIsInitialPlayback(true);
+    setIsPhraseVisible(false);
+    videoElement.currentTime = 0;
+    const playPromise = videoElement.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(err => {
+        console.error("Video play failed:", err);
+        setIsVideoPlaying(false);
+        setIsInitialPlayback(false);
+        setIsPhraseVisible(true);
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (!currentVideoSrc) {
+      setIsVideoPlaying(false);
+      setIsInitialPlayback(false);
+      setIsPhraseVisible(true);
+      return;
+    }
+    playVideo(true);
+  }, [currentVideoSrc, currentPhraseIndex]);
+
+  const handleVideoEnd = () => {
+    setIsInitialPlayback(false);
+    setIsVideoPlaying(false);
+    setIsPhraseVisible(true);
+    setIsCountdownModalOpen(false);
+    startRecording();
+  };
+
+  const handleVideoError = () => {
+    console.error("Failed to load video source:", currentVideoSrc);
+    setIsVideoPlaying(false);
+    setIsInitialPlayback(false);
+    setIsPhraseVisible(true);
+  };
+
+  const visualize = () => {
+    if (!analyserRef.current || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const canvasCtx = canvas.getContext('2d');
+    if (!canvasCtx) return;
+    analyserRef.current.fftSize = 2048;
+    const bufferLength = analyserRef.current.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    const draw = () => {
+      animationFrameId.current = requestAnimationFrame(draw);
+      analyserRef.current?.getByteTimeDomainData(dataArray);
+      
+      let sumSquares = 0.0;
+      for (let i = 0; i < dataArray.length; i++) {
+        const amplitude = (dataArray[i] / 128.0) - 1.0;
+        sumSquares += amplitude * amplitude;
+      }
+      const rms = Math.sqrt(sumSquares / dataArray.length);
+      const db = 20 * Math.log10(rms);
+      setDbfs(db);
+
+      canvasCtx.fillStyle = '#1e1e1e';
+      canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+      canvasCtx.lineWidth = 2;
+      canvasCtx.strokeStyle = '#61dafb';
+      canvasCtx.beginPath();
+      const sliceWidth = (canvas.width * 1.0) / bufferLength;
+      let x = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = (v * canvas.height) / 2;
+        if (i === 0) canvasCtx.moveTo(x, y);
+        else canvasCtx.lineTo(x, y);
+        x += sliceWidth;
+      }
+      canvasCtx.lineTo(canvas.width, canvas.height / 2);
+      canvasCtx.stroke();
+    };
+    draw();
+  };
+
+  const getDbfsColor = (dbfs: number) => dbfs > -20 ? 'red' : dbfs > -40 ? 'yellow' : 'green';
+  const formatTime = (time: number) => `${Math.floor(time / 60).toString().padStart(2, '0')}:${(time % 60).toString().padStart(2, '0')}`;
+
+  // --- RENDER ---
+  if (isLoading && !phrases.length) {
+    return <Container sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}><CircularProgress /></Container>;
+  }
+
+  return (
+    <Container maxWidth="lg">
+      {consentModalOpen && <ConsentScreen onAccept={handleAcceptConsent} onDecline={handleDeclineConsent} />}
+      {tooltipConfig.open && <TutorialTooltip text={tooltipConfig.text} top={tooltipConfig.top} left={tooltipConfig.left} onNext={handleNextTutorialStep} arrowTop={tooltipConfig.arrowTop} />}
+
+      <Box sx={{
+        filter: isTutorialActive ? 'brightness(0.7)' : 'none',
+        transition: 'filter 0.3s',
+        // Animação de "brilho" para o tutorial
+        '@keyframes tutorial-glow': {
+          '0%': { boxShadow: '0 0 0 0px rgba(25, 118, 210, 0.7)' },
+          '70%': { boxShadow: '0 0 10px 10px rgba(25, 118, 210, 0)' },
+          '100%': { boxShadow: '0 0 0 0px rgba(25, 118, 210, 0)' },
+        },
+        '.tutorial-highlight': {
+          animation: 'tutorial-glow 1.5s infinite',
+          borderRadius: '8px', // Deixa o brilho mais bonito nos cantos
+          zIndex: 1301, // Garante que o brilho fique acima do fundo escurecido
+          position: 'relative',
+        }
+      }}>
+        <Typography variant="h3" component="h1" textAlign="center" sx={{ mt: 4, mb: 2 }}>
+          Gravação de Fala ({datasetId ? datasetNames[parseInt(datasetId, 10)] : ''})
+        </Typography>
+
+        {phrases.length > 0 ? (
+          <Paper elevation={3} sx={{ p: 4, pointerEvents: isTutorialActive ? 'none' : 'auto' }}>
+            <Card>
+              <CardContent>
+                <Box display="flex" alignItems="center" mb={1}>
+                  {isRecording && <FiberManualRecordIcon sx={{ color: 'red', animation: 'blinking 1s infinite' }} />}
+                  <Typography variant="h6" sx={{ ml: 1 }}>{isRecording ? 'Gravando...' : isVideoPlaying ? 'Reproduzindo Vídeo...' : 'Pronto'}</Typography>
+                  <Box flexGrow={1} />
+                  <Typography variant="h6" sx={{ color: getDbfsColor(dbfs), mr: 2, fontWeight: 'bold' }}>
+                    {isRecording && isFinite(dbfs) ? `${dbfs.toFixed(2)} dBFS` : ''}
+                  </Typography>
+                  <Typography ref={timerRef} variant="h6">{formatTime(timer)}</Typography>
+                </Box>
+                <Box ref={waveformRef} sx={{ height: 100, backgroundColor: 'rgba(0,0,0,0.1)', mb: 2, borderRadius: 1 }}>
+                  <canvas ref={canvasRef} width="600" height="100" style={{ width: '100%', height: '100%' }} />
+                </Box>
+                {hasVideo && (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+                    <video
+                      ref={videoRef}
+                      src={currentVideoSrc}
+                      onEnded={handleVideoEnd}
+                      onError={handleVideoError}
+                      width="100%"
+                      height="300"
+                      controls
+                    />
+                  </Box>
+                )}
+                <Typography ref={phraseTextRef} variant="h4" sx={{ minHeight: 100, textAlign: 'center', my: 2 }}>
+                  {isPhraseVisible ? currentPhrase?.text : ''}
+                </Typography>
+                <Box mt={4} display="flex" justifyContent="space-around" alignItems="center">
+                  {/* <Button variant="outlined" onClick={handlePreviousPhrase} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen || currentPhraseIndex === 0}>
+                    Frase Anterior
+                  </Button> */}
+                  {hasVideo && <Button variant="outlined" color="info" onClick={handleReplayVideo} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen}>Repetir Vídeo</Button>}                  
+                  <Button ref={ignoreButtonRef} variant="outlined" color="secondary" onClick={handleIgnoreAndGoNext} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen}>Ignorar Áudio</Button>
+                  <Button ref={saveButtonRef} variant="contained" color="primary" onClick={handleNextPhrase} disabled={isTutorialActive || isInitialPlayback || isCountdownModalOpen}>
+                    {currentPhraseIndex < phrases.length - 1 ? 'Salvar e Próxima' : 'Finalizar'}
+                  </Button>
+                </Box>
+              </CardContent>
+            </Card>
+          </Paper>
+        ) : (
+          <Typography variant="h5" textAlign="center">Nenhuma frase encontrada para este dataset.</Typography>
+        )}
+
+        <Box mt={2} display="flex" justifyContent="center"><Button ref={homeButtonRef} component={Link} to="/">Voltar para a Home</Button></Box>
+      </Box>
+
+      {/* Modals */}
+      <Modal open={isCountdownModalOpen}><Box sx={modalStyle}><Typography variant="h1" textAlign="center">{countdown}</Typography></Box></Modal>
+      <Modal open={isTransitionModalOpen}>
+        <Box sx={modalStyle}>
+          <Typography variant="h6" component="h2" textAlign="center">{transitionMessage.title}</Typography>
+          <Typography sx={{ mt: 2, textAlign: 'center' }}>
+            {transitionMessage.body}
+          </Typography>
+          <Box mt={3} display="flex" justifyContent="center">
+            <Button onClick={handleContinueToNextPart} variant="contained">Continuar</Button>
+          </Box>
+        </Box>
+      </Modal>
+      <Modal open={openFinishModal}>
+        <Box sx={modalStyle}>
+          <Typography variant="h6" component="h2" textAlign="center">Sessão Finalizada!</Typography>
+          <Box mt={2} display="flex" justifyContent="center">
+            <Button component={Link} to="/">Voltar para a Home</Button>
+          </Box>
+        </Box>
+      </Modal>
+    </Container>
+  );
+};
+
+export default RecordingPage;
+

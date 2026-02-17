@@ -77,35 +77,16 @@ const RecordingPage: React.FC = () => {
 
   // Define visualize and stopRecording before startRecording
   const visualize = useCallback(() => {
-    if (!streamRef.current) return;
-
-    if (!audioContextRef.current) {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
-    const audioContext = audioContextRef.current;
-
-    if (!analyserRef.current) {
-      analyserRef.current = audioContext.createAnalyser();
-    }
     const analyser = analyserRef.current;
-
-    if (!sourceRef.current) {
-      // Recriar o analyser para garantir estado limpo
-      analyserRef.current = audioContext.createAnalyser();
-      analyserRef.current.fftSize = 2048;
-      
-      sourceRef.current = audioContext.createMediaStreamSource(streamRef.current);
-      sourceRef.current.connect(analyserRef.current);
-    }
-        
-    analyser.fftSize = 2048;
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
+    if (!analyser) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
     const canvasCtx = canvas.getContext('2d');
     if (!canvasCtx) return;
+
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
 
     const draw = () => {
       animationFrameId.current = requestAnimationFrame(draw);
@@ -113,59 +94,48 @@ const RecordingPage: React.FC = () => {
 
       let sumSquares = 0.0;
       for (let i = 0; i < dataArray.length; i++) {
-        const amplitude = dataArray[i];
-        const a = (amplitude / 128.0) - 1.0;
-        sumSquares += a * a;
+        const amplitude = (dataArray[i] / 128.0) - 1.0;
+        sumSquares += amplitude * amplitude;
       }
       const rms = Math.sqrt(sumSquares / dataArray.length);
       const db = 20 * Math.log10(rms);
       setDbfs(isFinite(db) ? db : -100);
 
-      let isCurrentlyClipping = false;
-      for (let i = 0; i < bufferLength; i++) {
-        const v = dataArray[i];
-        if (v >= 255 || v <= 0) {
-          isCurrentlyClipping = true;
-          break;
-        }
-      }
-      setIsClipping(isCurrentlyClipping);
-
-      canvasCtx.fillStyle = '#CCCCCC';
+      canvasCtx.fillStyle = '#1e1e1e';
       canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
       canvasCtx.lineWidth = 2;
-      canvasCtx.strokeStyle = isCurrentlyClipping ? 'red' : 'green';
+      canvasCtx.strokeStyle = '#61dafb';
       canvasCtx.beginPath();
-
-      const sliceWidth = canvas.width * 1.0 / bufferLength;
+      const sliceWidth = (canvas.width * 1.0) / bufferLength;
       let x = 0;
-
       for (let i = 0; i < bufferLength; i++) {
         const v = dataArray[i] / 128.0;
-        const y = v * canvas.height / 2;
-
-        if (i === 0) {
-          canvasCtx.moveTo(x, y);
-        } else {
-          canvasCtx.lineTo(x, y);
-        }
+        const y = (v * canvas.height) / 2;
+        if (i === 0) canvasCtx.moveTo(x, y);
+        else canvasCtx.lineTo(x, y);
         x += sliceWidth;
       }
-
       canvasCtx.lineTo(canvas.width, canvas.height / 2);
       canvasCtx.stroke();
     };
 
     draw();
-  }, [setDbfs, setIsClipping]);
+  }, [setDbfs]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
     }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
     if (sourceRef.current) {
       sourceRef.current.disconnect();
       sourceRef.current = null;
+    }
+    if(analyserRef.current) {
+        analyserRef.current = null;
     }
     if (animationFrameId.current) {
       cancelAnimationFrame(animationFrameId.current);
@@ -179,18 +149,24 @@ const RecordingPage: React.FC = () => {
       stopRecording();
     }
 
-    if (!streamRef.current || streamRef.current.getAudioTracks().every(track => track.readyState === 'ended')) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        streamRef.current = stream;
-      } catch (err) {
-        console.error("Error obtaining audio stream:", err);
-        setError("Não foi possível acessar o microfone. Verifique as permissões do seu navegador.");
-        return;
-      }
-    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
 
-    if (streamRef.current) {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+      }
+      
+      const audioContext = audioContextRef.current;
+      analyserRef.current = audioContext.createAnalyser();
+      analyserRef.current.fftSize = 2048;
+      
+      sourceRef.current = audioContext.createMediaStreamSource(streamRef.current);
+      sourceRef.current.connect(analyserRef.current);
+
       const recorder = new MediaRecorder(streamRef.current);
       mediaRecorderRef.current = recorder;
     
@@ -211,6 +187,11 @@ const RecordingPage: React.FC = () => {
       setIsRecording(true);
       setTimer(0);
       visualize();
+
+    } catch (err) {
+      console.error("Error obtaining audio stream:", err);
+      setError("Não foi possível acessar o microfone. Verifique as permissões do seu navegador.");
+      return;
     }
   }, [isRecording, stopRecording, visualize, setError]);
 
@@ -312,6 +293,18 @@ const RecordingPage: React.FC = () => {
         if (!session || !token) return;
         
         try {
+          const canvas = canvasRef.current;
+          if (canvas) {
+              const canvasCtx = canvas.getContext('2d');
+              if (canvasCtx) {
+                  canvasCtx.fillStyle = '#CCCCCC';
+                  canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+              }
+          }
+          setDbfs(-100);
+          setIsClipping(false);
+          setTimer(0);
+
           setIsProcessing(true);
           const nextPhraseIndex = currentPhraseIndex + 1;
           if (nextPhraseIndex < phrases.length) {
@@ -530,6 +523,7 @@ const RecordingPage: React.FC = () => {
   const progressValue = totalPhrases > 0 ? ((currentPhraseIndex + 1) / totalPhrases) * 100 : 0;
   const currentPhrase = phrases[currentPhraseIndex];
   const formatTime = (time: number) => `${Math.floor(time / 60)}:${(time % 60).toString().padStart(2, '0')}`;
+  const getDbfsColor = (dbfs: number) => dbfs > -20 ? 'red' : dbfs > -40 ? 'yellow' : 'green';
   
   if (isLoading && !showExistingSessionModal) {
     return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}><CircularProgress /></Box>;
@@ -596,12 +590,13 @@ const RecordingPage: React.FC = () => {
                   {isRecording && <FiberManualRecordIcon sx={{ color: 'red', animation: 'blinking 1s infinite' }} />}
                   <Typography variant="h6" sx={{ ml: 1 }}>{isRecording ? 'Gravando...' : 'Pronto'}</Typography>
                   <Box flexGrow={1} />
-                  {isRecording && <Typography variant="body2" sx={{ mr: 2 }}>{dbfs.toFixed(2)} dBFS</Typography>}
-                  {isClipping && <Typography color="error" sx={{ mr: 2 }}>Áudio Estourando!</Typography>}
+                  <Typography variant="h6" sx={{ color: getDbfsColor(dbfs), mr: 2, fontWeight: 'bold' }}>
+                    {isRecording && isFinite(dbfs) ? `${dbfs.toFixed(2)} dBFS` : ''}
+                  </Typography>
                   <Typography ref={timerElementRef} variant="h6">{currentPhraseIndex === 0 && !isRecording ? '0:03' : formatTime(timer)}</Typography>
                 </Box>
 
-                <Box sx={{ height: 100, backgroundColor: 'rgba(0,0,0,0.1)', mb: 2 }}>
+                <Box sx={{ height: 100, backgroundColor: 'rgba(0,0,0,0.1)', mb: 2, borderRadius: 1 }}>
                   <canvas ref={canvasRef} width="600" height="100" style={{ width: '100%', height: '100%' }} />
                 </Box>
                 
