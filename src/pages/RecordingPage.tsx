@@ -14,6 +14,23 @@ interface Block { blockId: number; name: string; }
 
 const modalStyle = { position: 'absolute' as 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 400, bgcolor: 'background.paper', border: '2px solid #000', boxShadow: 24, p: 4 };
 
+const blockTutorials: { [key: number]: { title: string; description: string } } = {
+  0: { title: "Bloco de Leitura", description: "Nesta seção, seu objetivo é ler as frases que aparecem na tela de forma clara e natural. Apenas leia o texto como se estivesse conversando." },
+  1: { title: "Bloco de Respostas", description: "Agora, em vez de ler, você responderá a perguntas. Leia a pergunta na tela e responda de forma espontânea, como faria em um diálogo real." },
+  2: { title: "Bloco de Emoção: Feliz", description: "Neste bloco, pedimos que você leia as frases transmitindo a emoção 'Feliz'. Tente sorrir e usar um tom de voz alegre e positivo." },
+  3: { title: "Bloco de Emoção: Triste", description: "Para as próximas frases, leia o texto expressando la emoção 'Triste'. Use um tom de voz mais baixo, lento e melancólico." },
+  4: { title: "Bloco de Emoção: Raiva", description: "Agora, o desafio é ler as frases com a emoção 'Raiva'. Tente usar um tom de voz firme, forte e que demonstre irritação ou frustração." },
+  5: { title: "Bloco de Emoção: Medo", description: "Nesta seção, leia as frases expressando 'Medo'. Sua voz deve soar hesitante, talvez um pouco trêmula ou sussurrada, como se estivesse assustado." },
+  6: { title: "Bloco de Emoção: Surpresa", description: "Leia as frases a seguir com a emoção 'Surpresa'. Use um tom de voz que demonstre espanto, como se tivesse acabado de descobrir algo inesperado." },
+  7: { title: "Bloco de Emoção: Neutra", description: "Neste bloco, o objetivo é ler as frases com uma emoção 'Neutra'. Fale de maneira clara e direta, sem adicionar qualquer sentimento ou entonação emocional." },
+  8: { title: "Bloco de Vídeo: Emoção Neutra", description: "Você assistirá a um vídeo. Após o vídeo, descreva o que você viu ou responda à pergunta relacionada, mantendo um tom de voz 'Neutro', sem expressar emoção." },
+  9: { title: "Bloco de Vídeo: Emoção Feliz", description: "Você assistirá a um vídeo. Após o vídeo, descreva o que você viu ou responda à pergunta relacionada, expressando a emoção 'Feliz' em sua voz." },
+  10: { title: "Bloco de Vídeo: Emoção Triste", description: "Você assistirá a um vídeo. Após o vídeo, descreva o que você viu ou responda à pergunta relacionada, transmitindo a emoção 'Triste' em sua voz." },
+  11: { title: "Bloco de Vídeo: Emoção Raiva", description: "Você assistirá a um vídeo. Após o vídeo, descreva o que você viu ou responda à pergunta relacionada, usando um tom de voz que expresse 'Raiva'." },
+  12: { title: "Bloco de Vídeo: Emoção Medo", description: "Você assistirá a um vídeo. Após o vídeo, descreva o que você viu ou responda à pergunta relacionada, falando com uma voz que demonstre 'Medo'." },
+  13: { title: "Bloco de Vídeo: Emoção Surpresa", description: "Você assistirá a um vídeo. Após o vídeo, descreva o que você viu ou responda à pergunta relacionada, expressando 'Surpresa' em sua fala." }
+};
+
 const TutorialTooltip: React.FC<{ text: string; top: number; left: number; onNext: () => void; arrowTop?: string | number; }> = ({ text, top, left, onNext, arrowTop = '50%' }) => (
   <Box sx={{ position: 'fixed', top, left, zIndex: 1400, transform: 'translateY(-50%)' }}>
     <Paper
@@ -61,18 +78,18 @@ const RecordingPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   
   const [isProcessing, setIsProcessing] = useState(false);
-  const [finalizationStep, setFinalizationStep] = useState<'idle' | 'notes'>('idle');
+  const [finalizationStep, setFinalizationStep] = useState<'idle' | 'preRoomTone' | 'roomTone' | 'notes'>('idle');
   const [sessionNotes, setSessionNotes] = useState('');
   const [openFinishModal, setOpenFinishModal] = useState(false);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
-  const [countdown, setCountdown] = useState<number | null>(null);
   const [showNoPhrasesModal, setShowNoPhrasesModal] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const MAX_RETRIES = 3;
+  const [uploadError, setUploadError] = useState<Error | null>(null);
+  const [audioForRetry, setAudioForRetry] = useState<Blob | null>(null);
 
   const [preRecordingStep, setPreRecordingStep] = useState<'voiceCheck' | 'voiceSample' | 'roomTone' | 'recording' | 'idle'>('idle'); 
-  const [postRecordingStep, setPostRecordingStep] = useState<'idle' | 'roomTone'>('idle');
-  const [roomToneCountdown, setRoomToneCountdown] = useState<number | null>(null);
+  const [finalRoomToneCountdown, setFinalRoomToneCountdown] = useState<number | null>(null);
   const [voiceSampleUrl, setVoiceSampleUrl] = useState<string | null>(null);
   const [voiceSampleStep, setVoiceSampleStep] = useState<'ready' | 'recording' | 'recorded' | 'playing'>('ready');
 
@@ -85,7 +102,7 @@ const RecordingPage: React.FC = () => {
   const [tooltipConfig, setTooltipConfig] = useState<{ open: boolean; text: string; top: number; left: number; arrowTop?: string | number; }>({ open: false, text: '', top: 0, left: 0 });
   const isTutorialActive = tutorialStep !== null;
   const [showBlockTutorialModal, setShowBlockTutorialModal] = useState(false);
-  const [blockTutorialContent, setBlockTutorialContent] = useState('');
+  const [blockTutorialContent, setBlockTutorialContent] = useState({ title: '', description: '' });
 
   const sessionCreationLock = useRef(false);
   const previousBlockIdRef = useRef<number | null>(null);
@@ -152,8 +169,15 @@ const RecordingPage: React.FC = () => {
     draw();
   }, [setDbfs]);
   
-  const stopRecording = useCallback((cleanupStream = true) => {
+  const stopRecording = useCallback((cleanupStream = true, onBlobAvailable?: (blob: Blob) => void) => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        audioChunksRef.current = [];
+        if (onBlobAvailable) {
+          onBlobAvailable(audioBlob);
+        }
+      };
       mediaRecorderRef.current.stop();
     }
     if (cleanupStream && streamRef.current) {
@@ -206,12 +230,6 @@ const RecordingPage: React.FC = () => {
         }
       };
     
-      recorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-        console.log("Recording stopped, blob created:", audioBlob);
-        audioChunksRef.current = [];
-      };
-    
       audioChunksRef.current = [];
       recorder.start();
       setIsRecording(true);
@@ -222,7 +240,7 @@ const RecordingPage: React.FC = () => {
       console.error("Error obtaining audio stream:", err);
       setError("Não foi possível acessar o microfone. Verifique as permissões do seu navegador.");
     }
-  }, [visualize, setError, stopRecording]);
+  }, [visualize, setError]);
 
   useEffect(() => {
     const createOrResumeSession = async () => {
@@ -352,9 +370,9 @@ const RecordingPage: React.FC = () => {
     if (phrases.length > 0 && blocks.length > 0) {
         const currentBlockId = phrases[currentPhraseIndex].blockId;
         if (previousBlockIdRef.current !== null && previousBlockIdRef.current !== currentBlockId) {
-            const blockInfo = blocks.find(b => b.blockId === currentBlockId);
-            if (blockInfo) {
-                setBlockTutorialContent(blockInfo.name);
+            const tutorial = blockTutorials[currentBlockId];
+            if (tutorial) {
+                setBlockTutorialContent(tutorial);
                 setShowBlockTutorialModal(true);
             }
         }
@@ -362,75 +380,121 @@ const RecordingPage: React.FC = () => {
     }
   }, [currentPhraseIndex, phrases, blocks]);
 
+  const handleTutorialModalClose = () => {
+    setShowBlockTutorialModal(false);
+    setIsUIPaused(false); // Descongela a UI para iniciar a gravação
+  };
+
   const handleNextTutorialStep = useCallback(() => {
     if (tutorialStep === 3) {
       setTutorialStep(null);
       startRecording();
+      setIsUIPaused(false); // Descongela a UI para iniciar a gravação
+      setPreRecordingStep('recording'); // Garante que o estado de gravação seja ativado
     } else {
       setTutorialStep(prev => (prev === null ? null : prev + 1));
     }
   }, [tutorialStep, startRecording]);
 
-  useEffect(() => {
-    if (!isTutorialActive) {
-      setTooltipConfig({ open: false, text: '', top: 0, left: 0 });
-      return;
-    }
-  
-    let config = { open: true, text: '', top: 0, left: 0, arrowTop: '50%' };
+  const getAudioMetadata = (audioBlob: Blob): Promise<{ duration: number; sampleRate: number }> => {
+    return new Promise((resolve, reject) => {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const fileReader = new FileReader();
+
+      fileReader.onloadend = () => {
+        const arrayBuffer = fileReader.result as ArrayBuffer;
+        audioContext.decodeAudioData(
+          arrayBuffer,
+          (audioBuffer) => {
+            resolve({
+              duration: audioBuffer.duration,
+              sampleRate: audioBuffer.sampleRate,
+            });
+          },
+          (error) => {
+            reject(error);
+          }
+        );
+      };
+
+      fileReader.onerror = (error) => {
+        reject(error);
+      };
+
+      fileReader.readAsArrayBuffer(audioBlob);
+    });
+  };
+
+  const advanceToNextPhrase = useCallback(async () => {
+    if (!session || !token) return;
     
-    const calculateTooltipPosition = () => {
-        switch (tutorialStep) {
-            case 0:
-                const phraseRect = phraseTextRef.current?.getBoundingClientRect();
-                if (phraseRect) {
-                    config.text = "Leia a frase em voz alta e clara.";
-                    config.top = phraseRect.top + phraseRect.height / 2;
-                    config.left = phraseRect.right + 20;
-                }
-                break;
-            case 1:
-                const saveRect = saveButtonRef.current?.getBoundingClientRect();
-                if (saveRect) {
-                    config.text = "Clique aqui quando terminar de falar.";
-                    config.top = saveRect.top + saveRect.height / 2;
-                    config.left = saveRect.right + 20;
-                }
-                break;
-            case 2:
-                const skipRect = skipButtonRef.current?.getBoundingClientRect();
-                if (skipRect) {
-                    config.text = "Use este botão se quiser pular a frase atual.";
-                    config.top = skipRect.top + skipRect.height / 2;
-                    config.left = skipRect.right + 20;
-                }
-                break;
-            case 3:
-                const timerRect = timerElementRef.current?.getBoundingClientRect();
-                if (timerRect) {
-                    config.text = "Fique de olho no tempo e no medidor de volume. Tudo pronto para começar?";
-                    config.top = timerRect.top + timerRect.height / 2;
-                    config.left = timerRect.right + 20;
-                }
-                break;
-            default:
-                config.open = false;
+    try {
+      setIsProcessing(true);
+      // Limpeza completa do estado anterior (congelado) e reinício do stream
+      stopRecording(true); // Agora limpa o stream completamente
+      
+      const nextPhraseIndex = currentPhraseIndex + 1;
+      if (nextPhraseIndex < phrases.length) {
+        const updatedSession = { ...session, numero_frase: nextPhraseIndex };
+        await api.put(`/sessions/${session.id}`, updatedSession, token);
+        setSession(updatedSession);
+        
+        const currentBlockId = phrases[currentPhraseIndex].blockId;
+        const nextBlockId = phrases[nextPhraseIndex].blockId;
+        
+        setCurrentPhraseIndex(nextPhraseIndex);
+
+        if (currentBlockId === nextBlockId) {
+          setIsUIPaused(false); // Descongela a UI se não houver mudança de bloco
+          startRecording(); // Reinicia a gravação explicitamente
         }
-        setTooltipConfig(config);
-    };
+        // Se houver mudança de bloco, a UI permanece congelada até o usuário fechar o tutorial
+      } else {
+        setIsUIPaused(false);
+        stopRecording(true); // Para e limpa a gravação da última frase
+        setFinalizationStep('preRoomTone');
+      }
+    } catch (error) {
+        console.error("Falha ao avançar a frase (fim da contagem):", error);
+    } finally {
+        setIsProcessing(false);
+    }
+  }, [session, token, currentPhraseIndex, phrases, stopRecording, startRecording, setIsUIPaused]);
 
-    // Delay calculation to ensure elements are rendered
-    const timeoutId = setTimeout(calculateTooltipPosition, 100);
+  const sendAudioData = useCallback(async (audioBlob: Blob) => {
+    if (!session || !token) return;
 
-    return () => clearTimeout(timeoutId);
-
-  }, [tutorialStep, isTutorialActive]);
+    try {
+      setIsProcessing(true);
+      const { duration, sampleRate } = await getAudioMetadata(audioBlob);
+      await api.uploadRecording(
+        session.id,
+        session.dataset_id,
+        phrases[currentPhraseIndex].id,
+        phrases[currentPhraseIndex].blockId,
+        audioBlob,
+        duration,
+        'wav',
+        sampleRate,
+        token,
+        phrases[currentPhraseIndex].text
+      );
+      setUploadError(null);
+      setAudioForRetry(null);
+      advanceToNextPhrase();
+    } catch (error: any) {
+      setUploadError(error);
+      setAudioForRetry(audioBlob);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [session, token, phrases, currentPhraseIndex, advanceToNextPhrase]);
 
   const processPhraseChange = useCallback(async (skip = false) => {
     if (!session || !token) return;
 
     // Stop recording and freeze UI immediately
-    stopRecording(false); // Do not cleanup stream yet
+    
     setIsUIPaused(true);
     setIsRecording(false); // Set to false to show "Pronto" status and freeze UI
 
@@ -469,48 +533,21 @@ const RecordingPage: React.FC = () => {
         setIsProcessing(false);
     }
     } else {
-      setCountdown(3); // Start countdown
+      stopRecording(false, sendAudioData);
     }
-  }, [session, token, isRecording, stopRecording, currentPhraseIndex, phrases.length, setIsUIPaused, setTimer, setDbfs]);
+  }, [session, token, stopRecording, currentPhraseIndex, phrases.length, setIsUIPaused, setTimer, setDbfs, sendAudioData]);
   
-  useEffect(() => {
-    if (countdown === null) return;
-  
-    if (countdown === 0) {
-      setCountdown(null);
-      const advance = async () => {
-        if (!session || !token) return;
-        
-        try {
-          setIsProcessing(true);
-          // Full cleanup of previous (frozen) state and restart stream
-          stopRecording(true); // Now cleanup stream fully
-          setIsUIPaused(false); // Unpause UI
-          
-          const nextPhraseIndex = currentPhraseIndex + 1;
-          if (nextPhraseIndex < phrases.length) {
-            const updatedSession = { ...session, numero_frase: nextPhraseIndex };
-            await api.put(`/sessions/${session.id}`, updatedSession, token);
-            setSession(updatedSession);
-            setCurrentPhraseIndex(nextPhraseIndex);
-            startRecording(); // Call startRecording explicitly here
-          } else {
-            setPostRecordingStep('roomTone');
-          }
-        } catch (error) {
-            console.error("Failed to advance phrase (countdown end):", error);
-        } finally {
-            setIsProcessing(false);
-        }
-      };
-      advance();
-    } else {
-      const timer = setTimeout(() => {
-        setCountdown(countdown - 1);
-      }, 1000);
-      return () => clearTimeout(timer);
+  const handleRetryUpload = () => {
+    if (audioForRetry) {
+      sendAudioData(audioForRetry);
     }
-  }, [countdown, session, token, currentPhraseIndex, phrases.length, stopRecording, startRecording, setIsUIPaused]);
+  };
+
+  const handleDiscardUpload = () => {
+    setUploadError(null);
+    setAudioForRetry(null);
+    advanceToNextPhrase();
+  };
 
   useEffect(() => {
     if (isRecording && !isUIPaused) {
@@ -525,21 +562,38 @@ const RecordingPage: React.FC = () => {
   }, [isRecording, isUIPaused]);
 
   useEffect(() => {
-    if (postRecordingStep === 'roomTone') {
+    if (finalizationStep === 'roomTone') {
+      // Zera a UI antes de começar a gravação final
+      setTimer(0);
+      setDbfs(-100);
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const canvasCtx = canvas.getContext('2d');
+        if (canvasCtx) {
+            canvasCtx.fillStyle = '#1e1e1e';
+            canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+      }
+
       startRecording();
-      setRoomToneCountdown(5);
-      const countdownInterval = setInterval(() => {
-        setRoomToneCountdown(prev => (prev !== null ? prev - 1 : null));
+      setFinalRoomToneCountdown(5);
+
+      const intervalId = setInterval(() => {
+        setFinalRoomToneCountdown(prev => (prev !== null && prev > 0 ? prev - 1 : 0));
       }, 1000);
 
-      setTimeout(() => {
-        clearInterval(countdownInterval);
+      const timeoutId = setTimeout(() => {
         stopRecording();
-        setPostRecordingStep('idle');
         setFinalizationStep('notes');
       }, 5000);
+
+      // Função de limpeza para evitar memory leaks
+      return () => {
+        clearInterval(intervalId);
+        clearTimeout(timeoutId);
+      };
     }
-  }, [postRecordingStep, startRecording, stopRecording]);
+  }, [finalizationStep, startRecording, stopRecording]);
   
   const handleNextPhrase = () => processPhraseChange(false);
   const handleSkipPhrase = () => processPhraseChange(true);
@@ -675,8 +729,9 @@ const RecordingPage: React.FC = () => {
   const handleSampleRecorded = useCallback(() => setPreRecordingStep('roomTone'), []);
 
   const handleRoomToneRecordingComplete = useCallback(() => {
-    setPreRecordingStep('recording');
+    setPreRecordingStep('recording'); // Força a transição para a tela de gravação
     if (currentPhraseIndex === 0) {
+      setIsUIPaused(true); // Pausa a nova tela para mostrar o tutorial
       setTutorialStep(0);
     }
   }, [currentPhraseIndex]);
@@ -782,8 +837,8 @@ const RecordingPage: React.FC = () => {
                 </Typography>
                 
                 <Box mt={4} display="flex" justifyContent="space-around">
-                  <Button ref={skipButtonRef} variant="outlined" onClick={handleSkipPhrase} disabled={isProcessing || countdown !== null}>Pular Áudio</Button>
-                  <Button ref={saveButtonRef} variant="contained" color="primary" onClick={handleNextPhrase} disabled={isProcessing || !isRecording || countdown !== null}>
+                  <Button ref={skipButtonRef} variant="outlined" onClick={handleSkipPhrase} disabled={isProcessing}>Pular Áudio</Button>
+                  <Button ref={saveButtonRef} variant="contained" color="primary" onClick={handleNextPhrase} disabled={isProcessing || !isRecording}>
                     {isProcessing ? <CircularProgress size={24} /> : 'Salvar e Próxima'}
                   </Button>
                 </Box>
@@ -810,11 +865,6 @@ const RecordingPage: React.FC = () => {
           </Box>
         </>
       )}
-      <Modal open={countdown !== null}>
-        <Box sx={{ ...modalStyle, width: 200, textAlign: 'center' }}>
-          <Typography variant="h1">{countdown}</Typography>
-        </Box>
-      </Modal>
       <Modal open={finalizationStep === 'notes'} onClose={() => setFinalizationStep('idle')}>
         <Box sx={modalStyle}>
           <Typography variant="h6">Notas da Sessão</Typography>
@@ -838,24 +888,50 @@ const RecordingPage: React.FC = () => {
         </Box>
       </Modal>
 
+      <Modal open={finalizationStep === 'preRoomTone'}>
+        <Box sx={modalStyle}>
+          <Typography variant="h6">Gravação de Som Ambiente</Typography>
+          <Typography sx={{ mt: 2 }}>
+            A gravação das frases foi concluída. Agora, vamos gravar 5 segundos de silêncio para capturar o som do seu ambiente.
+          </Typography>
+          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
+            <Button onClick={() => setFinalizationStep('roomTone')} variant="contained">
+              Iniciar Gravação de Som Ambiente
+            </Button>
+          </Box>
+        </Box>
+      </Modal>
+
       <Modal open={showBlockTutorialModal}>
         <Box sx={modalStyle}>
-          <Typography variant="h6">Instruções do Bloco</Typography>
-          <Typography sx={{ mt: 2 }}>{blockTutorialContent}</Typography>
+          <Typography variant="h6">{blockTutorialContent.title}</Typography>
+          <Typography sx={{ mt: 2 }}>{blockTutorialContent.description}</Typography>
           <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
-            <Button onClick={() => setShowBlockTutorialModal(false)} variant="contained">
+            <Button onClick={handleTutorialModalClose} variant="contained">
               Entendi
             </Button>
           </Box>
         </Box>
       </Modal>
 
-      <Modal open={postRecordingStep === 'roomTone'}>
+      <Modal open={finalizationStep === 'roomTone'}>
         <Box sx={modalStyle}>
           <Typography variant="h6">Gravando som ambiente</Typography>
           <Typography sx={{ mt: 2 }}>
-            Por favor, permaneça em silêncio por {roomToneCountdown} segundos.
+            Por favor, permaneça em silêncio por {finalRoomToneCountdown} segundos.
           </Typography>
+        </Box>
+      </Modal>
+      <Modal open={!!uploadError}>
+        <Box sx={modalStyle}>
+          <Typography variant="h6">Erro no Upload</Typography>
+          <Typography sx={{ mt: 2 }}>
+            Ocorreu um erro ao enviar o áudio. Deseja tentar novamente?
+          </Typography>
+          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between' }}>
+            <Button onClick={handleRetryUpload} variant="contained">Tentar Novamente</Button>
+            <Button onClick={handleDiscardUpload} variant="outlined">Descartar</Button>
+          </Box>
         </Box>
       </Modal>
     </Container>

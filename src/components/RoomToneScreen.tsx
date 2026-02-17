@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button, Typography, Box, Paper, CircularProgress } from '@mui/material';
 
 interface RoomToneScreenProps {
@@ -6,28 +6,79 @@ interface RoomToneScreenProps {
 }
 
 const RoomToneScreen: React.FC<RoomToneScreenProps> = ({ onRecordingComplete }) => {
-  const [step, setStep] = useState<'initial' | 'countdown' | 'recording'>('initial');
+  const [step, setStep] = useState<'initial' | 'countdown' | 'recording' | 'finished'>('initial');
   const [countdown, setCountdown] = useState(3);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    const handleStartRecording = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        streamRef.current = stream;
+        mediaRecorderRef.current = new MediaRecorder(stream);
+        
+        // Inicia a gravação
+        mediaRecorderRef.current.start();
+        
+        // Configura um timeout para parar a gravação após 5 segundos
+        setTimeout(() => {
+          stopRecording();
+          setStep('finished');
+        }, 5000);
+
+      } catch (err) {
+        console.error("Erro ao iniciar a gravação de som ambiente:", err);
+        // Em caso de erro, avança para a próxima etapa para não bloquear o usuário
+        onRecordingComplete(); 
+      }
+    };
+
+    if (step === 'recording') {
+      handleStartRecording();
+    }
+    
+    // Cleanup: Garante que a gravação pare se o componente for desmontado
+    return () => {
+      stopRecording();
+    };
+  }, [step, onRecordingComplete]);
 
   useEffect(() => {
     if (step === 'countdown' || step === 'recording') {
       const timer = setInterval(() => {
         setCountdown((prev) => {
-          if (prev === 1) {
+          if (prev > 1) {
+            return prev - 1;
+          } else {
+            clearInterval(timer);
             if (step === 'countdown') {
               setStep('recording');
-              return 5; // Duração da gravação
-            } else {
-              clearInterval(timer);
-              onRecordingComplete();
-              return 0;
+              setCountdown(5); // Inicia contagem da gravação
             }
+            return 0;
           }
-          return prev - 1;
         });
       }, 1000);
       return () => clearInterval(timer);
     }
+  }, [step]);
+  
+  // Chama onRecordingComplete quando a gravação termina
+  useEffect(() => {
+      if (step === 'finished') {
+          onRecordingComplete();
+      }
   }, [step, onRecordingComplete]);
 
   return (
