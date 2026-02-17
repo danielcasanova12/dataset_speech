@@ -82,6 +82,7 @@ const RecordingPage: React.FC = () => {
   const [sessionNotes, setSessionNotes] = useState('');
   const [openFinishModal, setOpenFinishModal] = useState(false);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
   const [showNoPhrasesModal, setShowNoPhrasesModal] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const MAX_RETRIES = 3;
@@ -511,31 +512,12 @@ const RecordingPage: React.FC = () => {
     }
 
     if (skip) {
-      try {
-        setIsProcessing(true);
-        // Full cleanup for skipped phrase
-        stopRecording(true); 
-        setIsUIPaused(false);
-
-        const nextPhraseIndex = currentPhraseIndex + 1;
-        if (nextPhraseIndex < phrases.length) {
-            const updatedSession = { ...session, numero_frase: nextPhraseIndex };
-            await api.put(`/sessions/${session.id}`, updatedSession, token);
-            setSession(updatedSession);
-            setCurrentPhraseIndex(nextPhraseIndex);
-            // startRecording is called by useEffect
-        } else {
-            setFinalizationStep('notes');
-        }
-    } catch (error) {
-        console.error("Failed to advance phrase (skip):", error);
-    } finally {
-        setIsProcessing(false);
-    }
+      stopRecording(true);
+      setCountdown(3);
     } else {
       stopRecording(false, sendAudioData);
     }
-  }, [session, token, stopRecording, currentPhraseIndex, phrases.length, setIsUIPaused, setTimer, setDbfs, sendAudioData]);
+  }, [session, token, stopRecording, sendAudioData]);
   
   const handleRetryUpload = () => {
     if (audioForRetry) {
@@ -548,6 +530,20 @@ const RecordingPage: React.FC = () => {
     setAudioForRetry(null);
     advanceToNextPhrase();
   };
+
+  useEffect(() => {
+    if (countdown === null) return;
+  
+    if (countdown === 0) {
+      setCountdown(null);
+      advanceToNextPhrase();
+    } else {
+      const timer = setTimeout(() => {
+        setCountdown(countdown - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [countdown, advanceToNextPhrase]);
 
   useEffect(() => {
     if (isRecording && !isUIPaused) {
@@ -837,8 +833,8 @@ const RecordingPage: React.FC = () => {
                 </Typography>
                 
                 <Box mt={4} display="flex" justifyContent="space-around">
-                  <Button ref={skipButtonRef} variant="outlined" onClick={handleSkipPhrase} disabled={isProcessing}>Pular Áudio</Button>
-                  <Button ref={saveButtonRef} variant="contained" color="primary" onClick={handleNextPhrase} disabled={isProcessing || !isRecording}>
+                  <Button ref={skipButtonRef} variant="outlined" onClick={handleSkipPhrase} disabled={isProcessing || countdown !== null}>Pular Áudio</Button>
+                  <Button ref={saveButtonRef} variant="contained" color="primary" onClick={handleNextPhrase} disabled={isProcessing || !isRecording || countdown !== null}>
                     {isProcessing ? <CircularProgress size={24} /> : 'Salvar e Próxima'}
                   </Button>
                 </Box>
@@ -865,6 +861,11 @@ const RecordingPage: React.FC = () => {
           </Box>
         </>
       )}
+      <Modal open={countdown !== null}>
+        <Box sx={{ ...modalStyle, width: 200, textAlign: 'center' }}>
+          <Typography variant="h1">{countdown}</Typography>
+        </Box>
+      </Modal>
       <Modal open={finalizationStep === 'notes'} onClose={() => setFinalizationStep('idle')}>
         <Box sx={modalStyle}>
           <Typography variant="h6">Notas da Sessão</Typography>
