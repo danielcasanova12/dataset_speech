@@ -15,10 +15,31 @@ const modalStyle = { position: 'absolute' as 'absolute', top: '50%', left: '50%'
 
 const TutorialTooltip: React.FC<{ text: string; top: number; left: number; onNext: () => void; arrowTop?: string | number; }> = ({ text, top, left, onNext, arrowTop = '50%' }) => (
   <Box sx={{ position: 'fixed', top, left, zIndex: 1400, transform: 'translateY(-50%)' }}>
-    <Paper elevation={6} sx={{ position: 'relative', p: 2, maxWidth: 260, bgcolor: 'background.paper', borderRadius: 2 }}>
+    <Paper
+      elevation={6}
+      sx={{
+        position: 'relative',
+        p: 2,
+        maxWidth: 260,
+        bgcolor: 'background.paper',
+        borderRadius: 2,
+      }}
+    >
       <Typography variant="body2" sx={{ mb: 2 }}>{text}</Typography>
       <Button onClick={onNext} variant="contained" size="small">Próximo</Button>
-      <Box sx={{ position: 'absolute', top: arrowTop, left: 0, transform: 'translate(-100%, -50%)', width: 0, height: 0, borderTop: '10px solid transparent', borderBottom: '10px solid transparent', borderRight: '10px solid #1976d2' }} />
+      <Box
+        sx={{
+          position: 'absolute',
+          top: arrowTop,
+          left: 0,
+          transform: 'translate(-100%, -50%)',
+          width: 0,
+          height: 0,
+          borderTop: '10px solid transparent',
+          borderBottom: '10px solid transparent',
+          borderRight: '10px solid #1976d2',
+        }}
+      />
     </Paper>
   </Box>
 );
@@ -49,9 +70,9 @@ const RecordingPage: React.FC = () => {
   const [voiceSampleStep, setVoiceSampleStep] = useState<'ready' | 'recording' | 'recorded' | 'playing'>('ready');
 
   const [isRecording, setIsRecording] = useState(false);
+  const [isUIPaused, setIsUIPaused] = useState(false);
   const [timer, setTimer] = useState(0);
   const [dbfs, setDbfs] = useState(-100);
-  const [isClipping, setIsClipping] = useState(false);
 
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
   const [tooltipConfig, setTooltipConfig] = useState<{ open: boolean; text: string; top: number; left: number; arrowTop?: string | number; }>({ open: false, text: '', top: 0, left: 0 });
@@ -75,7 +96,6 @@ const RecordingPage: React.FC = () => {
   const timerElementRef = useRef<HTMLElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Define visualize and stopRecording before startRecording
   const visualize = useCallback(() => {
     const analyser = analyserRef.current;
     if (!analyser) return;
@@ -121,12 +141,12 @@ const RecordingPage: React.FC = () => {
 
     draw();
   }, [setDbfs]);
-
-  const stopRecording = useCallback(() => {
+  
+  const stopRecording = useCallback((cleanupStream = true) => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
     }
-    if (streamRef.current) {
+    if (cleanupStream && streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
@@ -141,14 +161,14 @@ const RecordingPage: React.FC = () => {
       cancelAnimationFrame(animationFrameId.current);
       animationFrameId.current = null;
     }
+    if (timerIntervalId.current) {
+      clearInterval(timerIntervalId.current);
+      timerIntervalId.current = null;
+    }
     setIsRecording(false);
   }, []);
 
   const startRecording = useCallback(async () => {
-    if (isRecording) {
-      stopRecording();
-    }
-
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -191,9 +211,8 @@ const RecordingPage: React.FC = () => {
     } catch (err) {
       console.error("Error obtaining audio stream:", err);
       setError("Não foi possível acessar o microfone. Verifique as permissões do seu navegador.");
-      return;
     }
-  }, [isRecording, stopRecording, visualize, setError]);
+  }, [visualize, setError, stopRecording]);
 
   useEffect(() => {
     const createOrResumeSession = async () => {
@@ -250,12 +269,12 @@ const RecordingPage: React.FC = () => {
     };
     createOrResumeSession();
   }, [token, datasetId, navigate, location.state, session]);
-
+  
   useEffect(() => {
-    if (preRecordingStep === 'recording' && !isRecording) {
+    if (preRecordingStep === 'recording' && !isRecording && !isUIPaused) {
       startRecording();
     }
-  }, [preRecordingStep, isRecording, startRecording]);
+  }, [preRecordingStep, isRecording, isUIPaused, startRecording]);
 
   useEffect(() => {
     const fetchCsvData = async () => {
@@ -283,6 +302,62 @@ const RecordingPage: React.FC = () => {
     };
     fetchCsvData();
   }, [session]);
+
+  const handleNextTutorialStep = useCallback(() => {
+    if (tutorialStep === 3) {
+      setTutorialStep(null);
+      startRecording();
+    } else {
+      setTutorialStep(prev => (prev === null ? null : prev + 1));
+    }
+  }, [tutorialStep, startRecording]);
+
+  const processPhraseChange = useCallback(async (skip = false) => {
+    if (!session || !token) return;
+
+    // Stop recording and freeze UI immediately
+    stopRecording(false); // Do not cleanup stream yet
+    setIsUIPaused(true);
+    setIsRecording(false); // Set to false to show "Pronto" status and freeze UI
+
+    // Clean canvas, reset timer and dBFS for the next recording, but keep UI frozen
+    setTimer(0);
+    setDbfs(-100);
+    const canvas = canvasRef.current;
+    if (canvas) {
+        const canvasCtx = canvas.getContext('2d');
+        if (canvasCtx) {
+            canvasCtx.fillStyle = '#1e1e1e';
+            canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+    }
+
+    if (skip) {
+      try {
+        setIsProcessing(true);
+        // Full cleanup for skipped phrase
+        stopRecording(true); 
+        setIsUIPaused(false);
+
+        const nextPhraseIndex = currentPhraseIndex + 1;
+        if (nextPhraseIndex < phrases.length) {
+            const updatedSession = { ...session, numero_frase: nextPhraseIndex };
+            await api.put(`/sessions/${session.id}`, updatedSession, token);
+            setSession(updatedSession);
+            setCurrentPhraseIndex(nextPhraseIndex);
+            // startRecording is called by useEffect
+        } else {
+            setFinalizationStep('notes');
+        }
+    } catch (error) {
+        console.error("Failed to advance phrase (skip):", error);
+    } finally {
+        setIsProcessing(false);
+    }
+    } else {
+      setCountdown(3); // Start countdown
+    }
+  }, [session, token, isRecording, stopRecording, currentPhraseIndex, phrases.length, setIsUIPaused, setTimer, setDbfs]);
   
   useEffect(() => {
     if (countdown === null) return;
@@ -293,31 +368,23 @@ const RecordingPage: React.FC = () => {
         if (!session || !token) return;
         
         try {
-          const canvas = canvasRef.current;
-          if (canvas) {
-              const canvasCtx = canvas.getContext('2d');
-              if (canvasCtx) {
-                  canvasCtx.fillStyle = '#CCCCCC';
-                  canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
-              }
-          }
-          setDbfs(-100);
-          setIsClipping(false);
-          setTimer(0);
-
           setIsProcessing(true);
+          // Full cleanup of previous (frozen) state and restart stream
+          stopRecording(true); // Now cleanup stream fully
+          setIsUIPaused(false); // Unpause UI
+          
           const nextPhraseIndex = currentPhraseIndex + 1;
           if (nextPhraseIndex < phrases.length) {
             const updatedSession = { ...session, numero_frase: nextPhraseIndex };
             await api.put(`/sessions/${session.id}`, updatedSession, token);
             setSession(updatedSession);
             setCurrentPhraseIndex(nextPhraseIndex);
-            startRecording(); 
+            startRecording(); // Call startRecording explicitly here
           } else {
             setFinalizationStep('notes');
           }
         } catch (error) {
-            console.error("Failed to advance phrase:", error);
+            console.error("Failed to advance phrase (countdown end):", error);
         } finally {
             setIsProcessing(false);
         }
@@ -329,9 +396,24 @@ const RecordingPage: React.FC = () => {
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [countdown, session, token, currentPhraseIndex, phrases, startRecording]);
+  }, [countdown, session, token, currentPhraseIndex, phrases.length, stopRecording, startRecording, setIsUIPaused]);
 
-  const handleResumeSession = () => {
+  useEffect(() => {
+    if (isRecording && !isUIPaused) {
+      timerIntervalId.current = setInterval(() => setTimer((prev) => prev + 1), 1000);
+    } else {
+      if (timerIntervalId.current) clearInterval(timerIntervalId.current);
+      timerIntervalId.current = null;
+    }
+    return () => {
+      if (timerIntervalId.current) clearInterval(timerIntervalId.current);
+    };
+  }, [isRecording, isUIPaused]);
+  
+  const handleNextPhrase = () => processPhraseChange(false);
+  const handleSkipPhrase = () => processPhraseChange(true);
+
+  const handleResumeSession = useCallback(() => {
     if (existingSessionInfo) {
       const info = findByBackendId(existingSessionInfo.dataset_id);
       if (info) {
@@ -339,9 +421,9 @@ const RecordingPage: React.FC = () => {
         navigate(`/recording/${info.frontendId}`, { state: { sessionToResume: existingSessionInfo } });
       }
     }
-  };
+  }, [existingSessionInfo, navigate]);
 
-  const handleCancelAndCreateNewSession = async () => {
+  const handleCancelAndCreateNewSession = useCallback(async () => {
     if (existingSessionInfo && token && datasetId) {
       try {
         const finished_at = new Date().toISOString();
@@ -357,138 +439,21 @@ const RecordingPage: React.FC = () => {
         setIsLoading(false);
       }
     }
-  };
-  
-  const handleVoiceCheckSubmit = () => setPreRecordingStep('voiceSample');
+  }, [existingSessionInfo, token, datasetId, setIsLoading, setError, setExistingSessionInfo, setSession]);
 
-  const handleStartSampleRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      
-      const recorder = new MediaRecorder(stream);
-      mediaRecorderSampleRef.current = recorder;
-      
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksSampleRef.current.push(event.data);
-        }
-      };
-      
-      recorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksSampleRef.current, { type: 'audio/wav' });
-        const url = URL.createObjectURL(audioBlob);
-        setVoiceSampleUrl(url);
-        setVoiceSampleStep('recorded');
-        audioChunksSampleRef.current = [];
-      };
-      
-      recorder.start();
-      setVoiceSampleStep('recording');
-    } catch (err) {
-      console.error("Error starting sample recording:", err);
-      setError("Não foi possível acessar o microfone. Verifique as permissões do seu navegador.");
-    }
-  };
-
-  const handleStopSampleRecording = () => {
-    if (mediaRecorderSampleRef.current && mediaRecorderSampleRef.current.state === 'recording') {
-      mediaRecorderSampleRef.current.stop();
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-  };
-  
-  const handlePlaySample = () => setVoiceSampleStep('playing');
-  const handleSamplePlaybackEnded = () => setVoiceSampleStep('recorded');
-  
-  const handleSampleRecorded = () => setPreRecordingStep('roomTone');
-
-  const handleRoomToneRecordingComplete = () => {
-    setPreRecordingStep('recording');
-    if (currentPhraseIndex === 0) {
-      setTutorialStep(0);
-    }
-  };
-
-  useEffect(() => {
-    if (isRecording) {
-      timerIntervalId.current = setInterval(() => setTimer((prev) => prev + 1), 1000);
-    } else {
-      if (timerIntervalId.current) clearInterval(timerIntervalId.current);
-    }
-    return () => {
-      if (timerIntervalId.current) clearInterval(timerIntervalId.current);
-    };
-  }, [isRecording]);
-
-  useEffect(() => {
-    const tutorialSteps = [
-      { ref: timerElementRef, text: "Aqui você verá o tempo da sua gravação. Na primeira frase, este é um exemplo." },
-      { ref: phraseTextRef, text: "Leia esta frase em voz alta." },
-      { ref: skipButtonRef, text: "Use este botão se não quiser ou não puder gravar a frase atual." },
-      { ref: saveButtonRef, text: "Use este botão para salvar e ir para a próxima frase." },
-    ];
-    document.querySelectorAll('.tutorial-highlight').forEach(el => el.classList.remove('tutorial-highlight'));
-
-    if (tutorialStep !== null) {
-      if (tutorialStep >= tutorialSteps.length) {
-        setTutorialStep(null); 
-      } else {
-        const { ref, text } = tutorialSteps[tutorialStep];
-        if (ref.current) {
-          ref.current.classList.add('tutorial-highlight');
-          const rect = ref.current.getBoundingClientRect();
-          setTooltipConfig({ open: true, text, top: rect.top, left: rect.right + 15 });
-        }
-      }
-    } else {
-      setTooltipConfig({ open: false, text: '', top: 0, left: 0 });
-    }
-  }, [tutorialStep]);
-
-  const handleNextTutorialStep = () => {
-    if (tutorialStep === 3) {
-      setTutorialStep(null);
-      startRecording();
-    } else {
-      setTutorialStep(prev => (prev === null ? null : prev + 1));
-    }
-  };
-
-  const processPhraseChange = async (skip = false) => {
-    if (!session || !token) return;
-    
-    stopRecording();
-    
-    if (skip) {
+  const confirmCancelSession = async () => {
+    if (session && token) {
       try {
-        setIsProcessing(true);
-        const nextPhraseIndex = currentPhraseIndex + 1;
-        if (nextPhraseIndex < phrases.length) {
-            const updatedSession = { ...session, numero_frase: nextPhraseIndex };
-            await api.put(`/sessions/${session.id}`, updatedSession, token);
-            setSession(updatedSession);
-            setCurrentPhraseIndex(nextPhraseIndex);
-            startRecording(); 
-        } else {
-            setFinalizationStep('notes');
-        }
-    } catch (error) {
-        console.error("Failed to advance phrase:", error);
-    } finally {
-        setIsProcessing(false);
+        await api.put(`/sessions/${session.id}`, { ...session, status: "cancelada", finished_at: new Date().toISOString() }, token);
+        navigate('/');
+      } catch (error) {
+        console.error("Failed to cancel session:", error);
+        setError("Não foi possível cancelar a sessão. Tente novamente.");
+      }
     }
-    } else {
-      setCountdown(3);
-    }
+    setIsCancelModalOpen(false);
   };
-
-  const handleNextPhrase = () => processPhraseChange(false);
-  const handleSkipPhrase = () => processPhraseChange(true);
-
+  
   const handleFinish = async () => {
     if (session && token) {
       try {
@@ -506,24 +471,62 @@ const RecordingPage: React.FC = () => {
       }
     }
   };
-  const confirmCancelSession = async () => {
-    if (session && token) {
-      try {
-        await api.put(`/sessions/${session.id}`, { ...session, status: "cancelada", finished_at: new Date().toISOString() }, token);
-        navigate('/');
-      } catch (error) {
-        console.error("Failed to cancel session:", error);
-        setError("Não foi possível cancelar a sessão. Tente novamente.");
-      }
-    }
-    setIsCancelModalOpen(false);
-  };
-  
+
   const totalPhrases = phrases.length;
   const progressValue = totalPhrases > 0 ? ((currentPhraseIndex + 1) / totalPhrases) * 100 : 0;
   const currentPhrase = phrases[currentPhraseIndex];
   const formatTime = (time: number) => `${Math.floor(time / 60)}:${(time % 60).toString().padStart(2, '0')}`;
   const getDbfsColor = (dbfs: number) => dbfs > -20 ? 'red' : dbfs > -40 ? 'yellow' : 'green';
+  
+  // Handlers for pre-recording steps...
+  const handleVoiceCheckSubmit = useCallback(() => setPreRecordingStep('voiceSample'), []);
+
+  const handleStartSampleRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderSampleRef.current = new MediaRecorder(stream);
+      
+      mediaRecorderSampleRef.current.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksSampleRef.current.push(event.data);
+        }
+      };
+      
+      mediaRecorderSampleRef.current.onstop = () => {
+        const audioBlob = new Blob(audioChunksSampleRef.current, { type: 'audio/wav' });
+        const url = URL.createObjectURL(audioBlob);
+        setVoiceSampleUrl(url);
+        setVoiceSampleStep('recorded');
+        audioChunksSampleRef.current = [];
+      };
+      
+      mediaRecorderSampleRef.current.start();
+      setVoiceSampleStep('recording');
+    } catch (err) {
+      console.error("Error starting sample recording:", err);
+      setError("Não foi possível acessar o microfone. Verifique as permissões do seu navegador.");
+    }
+  }, [setError]);
+
+  const handleStopSampleRecording = useCallback(() => {
+    if (mediaRecorderSampleRef.current && mediaRecorderSampleRef.current.state === 'recording') {
+      mediaRecorderSampleRef.current.stop();
+    }
+    // No stream cleanup here, as it's a temporary sample recording.
+    // The main streamRef is handled by stopRecording for phrases.
+  }, []);
+
+  const handlePlaySample = useCallback(() => setVoiceSampleStep('playing'), []);
+  const handleSamplePlaybackEnded = useCallback(() => setVoiceSampleStep('recorded'), []);
+  
+  const handleSampleRecorded = useCallback(() => setPreRecordingStep('roomTone'), []);
+
+  const handleRoomToneRecordingComplete = useCallback(() => {
+    setPreRecordingStep('recording');
+    if (currentPhraseIndex === 0) {
+      setTutorialStep(0);
+    }
+  }, [currentPhraseIndex]);
   
   if (isLoading && !showExistingSessionModal) {
     return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}><CircularProgress /></Box>;
@@ -591,12 +594,12 @@ const RecordingPage: React.FC = () => {
                   <Typography variant="h6" sx={{ ml: 1 }}>{isRecording ? 'Gravando...' : 'Pronto'}</Typography>
                   <Box flexGrow={1} />
                   <Typography variant="h6" sx={{ color: getDbfsColor(dbfs), mr: 2, fontWeight: 'bold' }}>
-                    {isRecording && isFinite(dbfs) ? `${dbfs.toFixed(2)} dBFS` : ''}
+                    {(isRecording || isUIPaused) && isFinite(dbfs) ? `${dbfs.toFixed(2)} dBFS` : ''}
                   </Typography>
-                  <Typography ref={timerElementRef} variant="h6">{currentPhraseIndex === 0 && !isRecording ? '0:03' : formatTime(timer)}</Typography>
+                  <Typography ref={timerElementRef} variant="h6">{formatTime(timer)}</Typography>
                 </Box>
 
-                <Box sx={{ height: 100, backgroundColor: 'rgba(0,0,0,0.1)', mb: 2, borderRadius: 1 }}>
+                <Box sx={{ height: 100, backgroundColor: '#1e1e1e', mb: 2, borderRadius: 1 }}>
                   <canvas ref={canvasRef} width="600" height="100" style={{ width: '100%', height: '100%' }} />
                 </Box>
                 
@@ -605,8 +608,8 @@ const RecordingPage: React.FC = () => {
                 </Typography>
                 
                 <Box mt={4} display="flex" justifyContent="space-around">
-                  <Button ref={skipButtonRef} variant="outlined" onClick={handleSkipPhrase} disabled={isProcessing}>Pular Áudio</Button>
-                  <Button ref={saveButtonRef} variant="contained" color="primary" onClick={handleNextPhrase} disabled={isProcessing || !isRecording}>
+                  <Button ref={skipButtonRef} variant="outlined" onClick={handleSkipPhrase} disabled={isProcessing || countdown !== null}>Pular Áudio</Button>
+                  <Button ref={saveButtonRef} variant="contained" color="primary" onClick={handleNextPhrase} disabled={isProcessing || !isRecording || countdown !== null}>
                     {isProcessing ? <CircularProgress size={24} /> : 'Salvar e Próxima'}
                   </Button>
                 </Box>
@@ -616,13 +619,17 @@ const RecordingPage: React.FC = () => {
             )}
 
             <Box mt={2} display="flex" justifyContent="center">
-                <Button component={Link} to="/" sx={{ mr: 2 }}>Voltar</Button>
+                <Button component={Link} to="/">Voltar</Button>
                 <Button variant="outlined" color="error" onClick={() => setIsCancelModalOpen(true)}>Cancelar Sessão</Button>
             </Box>
           </Box>
         </>
       )}
-
+      <Modal open={countdown !== null}>
+        <Box sx={{ ...modalStyle, width: 200, textAlign: 'center' }}>
+          <Typography variant="h1">{countdown}</Typography>
+        </Box>
+      </Modal>
       <Modal open={finalizationStep === 'notes'} onClose={() => setFinalizationStep('idle')}>
         <Box sx={modalStyle}>
           <Typography variant="h6">Notas da Sessão</Typography>
@@ -642,12 +649,7 @@ const RecordingPage: React.FC = () => {
       <Modal open={openFinishModal}>
         <Box sx={modalStyle}>
           <Typography variant="h6">Sessão Finalizada!</Typography>
-          <Button component={Link} to="/" variant="contained" sx={{ mt: 2 }}>Voltar para Home</Button>
-        </Box>
-      </Modal>
-      <Modal open={countdown !== null}>
-        <Box sx={{ ...modalStyle, width: 200, textAlign: 'center' }}>
-          <Typography variant="h1">{countdown}</Typography>
+          <Button component={Link} to="/">Voltar para Home</Button>
         </Box>
       </Modal>
     </Container>
