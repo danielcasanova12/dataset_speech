@@ -61,6 +61,28 @@ const TutorialTooltip: React.FC<{ text: string; top: number; left: number; onNex
     </Paper>
   </Box>
 );
+const systemTutorialSteps = [
+  {
+    text: "Aqui você acompanha o progresso das frases gravadas.",
+    getPosition: (progressRef: HTMLElement | null) =>
+      progressRef?.getBoundingClientRect(),
+  },
+  {
+    text: "Aqui você vê o nível do áudio (dBFS). Evite ficar no vermelho.",
+    getPosition: (timerRef: HTMLElement | null) =>
+      timerRef?.getBoundingClientRect(),
+  },
+  {
+    text: "Leia esta frase em voz alta de forma clara e natural.",
+    getPosition: (phraseRef: HTMLElement | null) =>
+      phraseRef?.getBoundingClientRect(),
+  },
+  {
+    text: "Clique aqui para salvar e ir para a próxima frase.",
+    getPosition: (saveRef: HTMLElement | null) =>
+      saveRef?.getBoundingClientRect(),
+  },
+];
 
 const RecordingPage: React.FC = () => {
   const navigate = useNavigate();
@@ -367,19 +389,60 @@ const RecordingPage: React.FC = () => {
     fetchCsvData();
   }, [session]);
 
-  useEffect(() => {
-    if (phrases.length > 0 && blocks.length > 0) {
-        const currentBlockId = phrases[currentPhraseIndex].blockId;
-        if (previousBlockIdRef.current !== null && previousBlockIdRef.current !== currentBlockId) {
-            const tutorial = blockTutorials[currentBlockId];
-            if (tutorial) {
-                setBlockTutorialContent(tutorial);
-                setShowBlockTutorialModal(true);
-            }
-        }
-        previousBlockIdRef.current = currentBlockId;
+    useEffect(() => {
+    if (!isTutorialActive) {
+      setTooltipConfig({ open: false, text: '', top: 0, left: 0 });
+      return;
     }
-  }, [currentPhraseIndex, phrases, blocks]);
+  
+    let config = { open: true, text: '', top: 0, left: 0, arrowTop: '50%' as string | number };
+    
+    const calculateTooltipPosition = () => {
+        switch (tutorialStep) {
+            case 0:
+                const phraseRect = phraseTextRef.current?.getBoundingClientRect();
+                if (phraseRect) {
+                    config.text = "Leia a frase em voz alta e clara.";
+                    config.top = phraseRect.top + (phraseRect.height / 2);
+                    config.left = phraseRect.right + 20;
+                }
+                break;
+            case 1:
+                const saveRect = saveButtonRef.current?.getBoundingClientRect();
+                if (saveRect) {
+                    config.text = "Clique aqui quando terminar de falar.";
+                    config.top = saveRect.top + saveRect.height / 2;
+                    config.left = saveRect.right + 20;
+                }
+                break;
+            case 2:
+                const skipRect = skipButtonRef.current?.getBoundingClientRect();
+                if (skipRect) {
+                    config.text = "Use este botão se quiser pular a frase atual.";
+                    config.top = skipRect.top + skipRect.height / 2;
+                    config.left = skipRect.right + 20;
+                }
+                break;
+            case 3:
+                const timerRect = timerElementRef.current?.getBoundingClientRect();
+                if (timerRect) {
+                    config.text = "Fique de olho no tempo e no medidor de volume. Tudo pronto para começar?";
+                    config.top = timerRect.top + timerRect.height / 2;
+                    config.left = timerRect.right + 20;
+                }
+                break;
+            default:
+                config.open = false;
+        }
+        setTooltipConfig(config);
+    };
+
+    // Delay calculation to ensure elements are rendered
+    const timeoutId = setTimeout(calculateTooltipPosition, 100);
+
+    return () => clearTimeout(timeoutId);
+
+  }, [tutorialStep, isTutorialActive]);
 
   const handleTutorialModalClose = () => {
     setShowBlockTutorialModal(false);
