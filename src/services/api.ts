@@ -231,28 +231,35 @@ export const api = {
   uploadRecording: async (
     sessionId: number,
     datasetId: number,
-    phraseId: number,
     blockId: number,
     audioBlob: Blob,
     duration: number,
     format: string,
     sampleRate: number,
     token: string,
-    frase_content: string,
+    is_room_tone: boolean,
+    phraseId?: number,
+    frase_content?: string,
   ): Promise<any> => {
     const formData = new FormData();
     formData.append('session_id', sessionId.toString());
     formData.append('dataset_id', datasetId.toString());
-    formData.append('phrase_id', phraseId.toString());
     formData.append('bloco_id', blockId.toString());
     formData.append('duration', duration.toString());
     formData.append('format', format);
     formData.append('sample_rate', sampleRate.toString());
     formData.append('audio_file', audioBlob, 'recording.wav');
-    formData.append('frase_content', frase_content);
     formData.append('is_test', 'false');
     formData.append('room_tone_start', '0');
     formData.append('room_tone_end', '0');
+    formData.append('is_room_tone', String(is_room_tone));
+
+    if (phraseId) {
+      formData.append('phrase_id', phraseId.toString());
+    }
+    if (frase_content) {
+      formData.append('frase_content', frase_content);
+    }
 
 
     const response = await fetch(`${API_BASE_URL}/api/v1/recordings`, {
@@ -271,3 +278,4 @@ export const api = {
     return response.json();
   },
 };
+// Force re-evaluation

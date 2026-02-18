@@ -462,7 +462,7 @@ const RecordingPage: React.FC = () => {
     }
   }, [session, token, currentPhraseIndex, phrases, stopRecording, startRecording, setIsUIPaused]);
 
-  const sendAudioData = useCallback(async (audioBlob: Blob) => {
+  const sendAudioData = useCallback(async (audioBlob: Blob, is_room_tone = false, blockId?: number) => {
     if (!session || !token) return;
 
     try {
@@ -471,18 +471,21 @@ const RecordingPage: React.FC = () => {
       await api.uploadRecording(
         session.id,
         session.dataset_id,
-        phrases[currentPhraseIndex].id,
-        phrases[currentPhraseIndex].blockId,
+        blockId !== undefined ? blockId : phrases[currentPhraseIndex].blockId,
         audioBlob,
         duration,
         'wav',
         sampleRate,
         token,
-        phrases[currentPhraseIndex].text
+        is_room_tone,
+        !is_room_tone ? phrases[currentPhraseIndex].id : undefined,
+        !is_room_tone ? phrases[currentPhraseIndex].text : undefined
       );
       setUploadError(null);
       setAudioForRetry(null);
-      advanceToNextPhrase();
+      if (!is_room_tone) {
+        advanceToNextPhrase();
+      }
     } catch (error: any) {
       setUploadError(error);
       setAudioForRetry(audioBlob);
@@ -635,15 +638,6 @@ const RecordingPage: React.FC = () => {
     }
   }, [existingSessionInfo, token, datasetId, setIsLoading, setError, setExistingSessionInfo, setSession, setCurrentPhraseIndex, setPreRecordingStep, setShowExistingSessionModal]);
 
-  const handleResumeOrCreateSession = () => {
-    if (existingSessionInfo) {
-      handleResumeSession();
-    } else {
-      setPreRecordingStep('voiceCheck');
-    }
-    setShowNoPhrasesModal(false);
-  };
-
   const confirmCancelSession = async () => {
     if (session && token) {
       try {
@@ -724,13 +718,19 @@ const RecordingPage: React.FC = () => {
   
   const handleSampleRecorded = useCallback(() => setPreRecordingStep('roomTone'), []);
 
-  const handleRoomToneRecordingComplete = useCallback(() => {
+  const handleRoomToneUpload = (audioBlob: Blob) => {
+    // For the initial room tone, we can assume blockId 1
+    sendAudioData(audioBlob, true, 1); 
     setPreRecordingStep('recording'); // Força a transição para a tela de gravação
     if (currentPhraseIndex === 0) {
       setIsUIPaused(true); // Pausa a nova tela para mostrar o tutorial
       setTutorialStep(0);
     }
-  }, [currentPhraseIndex]);
+  };
+
+  const handleRoomToneRecordingComplete = (blob: Blob) => {
+    handleRoomToneUpload(blob);
+  };
   
   if (isLoading && !showExistingSessionModal) {
     return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}><CircularProgress /></Box>;
@@ -749,22 +749,16 @@ const RecordingPage: React.FC = () => {
 
   return (
     <Container maxWidth="lg">
-      <Modal open={showNoPhrasesModal}>
+      <Modal open={showNoPhrasesModal} onClose={() => navigate('/')}>
         <Box sx={modalStyle}>
-          <Typography variant="h6">Sessão não iniciada</Typography>
+          <Typography variant="h6">Nenhuma Frase Encontrada</Typography>
           <Typography sx={{ mt: 2 }}>
-            {existingSessionInfo
-              ? "Deseja voltar para a sessão anterior?"
-              : "Como está sua voz hoje?"}
+            Este conjunto de dados não parece ter frases para gravação.
           </Typography>
-          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between' }}>
-            <Button onClick={handleResumeOrCreateSession} variant="contained">
-              {existingSessionInfo ? "Voltar para sessão" : "Iniciar nova sessão"}
+          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
+            <Button onClick={() => navigate('/')} variant="contained">
+              Voltar ao Início
             </Button>
-            <Button onClick={() => {
-              setShowNoPhrasesModal(false);
-              navigate('/');
-            }} variant="outlined">Cancelar</Button>
           </Box>
         </Box>
       </Modal>
@@ -828,7 +822,7 @@ const RecordingPage: React.FC = () => {
                   <canvas ref={canvasRef} width="600" height="100" style={{ width: '100%', height: '100%' }} />
                 </Box>
                 
-                <Typography ref={phraseTextRef} variant="h4" sx={{ minHeight: 100, textAlign: 'center', my: 2 }}>
+                <Typography ref={phraseTextRef} variant="h4" sx={{ minHeight: 100, textAlign: 'center', my: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {currentPhrase.text}
                 </Typography>
                 
@@ -940,3 +934,4 @@ const RecordingPage: React.FC = () => {
 };
 
 export default RecordingPage;
+// Force re-evaluation

@@ -1,25 +1,31 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Button, Typography, Box, Paper, CircularProgress } from '@mui/material';
 
 interface RoomToneScreenProps {
-  onRecordingComplete: () => void;
+  onRecordingComplete: (blob: Blob) => void;
 }
 
 const RoomToneScreen: React.FC<RoomToneScreenProps> = ({ onRecordingComplete }) => {
   const [step, setStep] = useState<'initial' | 'countdown' | 'recording' | 'finished'>('initial');
   const [countdown, setCountdown] = useState(3);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
 
-  const stopRecording = () => {
+  const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        audioChunksRef.current = [];
+        onRecordingComplete(audioBlob);
+      };
       mediaRecorderRef.current.stop();
     }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
-  };
+  }, [onRecordingComplete]);
 
   useEffect(() => {
     const handleStartRecording = async () => {
@@ -28,6 +34,12 @@ const RoomToneScreen: React.FC<RoomToneScreenProps> = ({ onRecordingComplete }) 
         streamRef.current = stream;
         mediaRecorderRef.current = new MediaRecorder(stream);
         
+        mediaRecorderRef.current.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+
         // Inicia a gravação
         mediaRecorderRef.current.start();
         
@@ -40,7 +52,7 @@ const RoomToneScreen: React.FC<RoomToneScreenProps> = ({ onRecordingComplete }) 
       } catch (err) {
         console.error("Erro ao iniciar a gravação de som ambiente:", err);
         // Em caso de erro, avança para a próxima etapa para não bloquear o usuário
-        onRecordingComplete(); 
+        onRecordingComplete(new Blob()); 
       }
     };
 
@@ -50,9 +62,11 @@ const RoomToneScreen: React.FC<RoomToneScreenProps> = ({ onRecordingComplete }) 
     
     // Cleanup: Garante que a gravação pare se o componente for desmontado
     return () => {
-      stopRecording();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        stopRecording();
+      }
     };
-  }, [step, onRecordingComplete]);
+  }, [step, onRecordingComplete, stopRecording]);
 
   useEffect(() => {
     if (step === 'countdown' || step === 'recording') {
@@ -74,12 +88,12 @@ const RoomToneScreen: React.FC<RoomToneScreenProps> = ({ onRecordingComplete }) 
     }
   }, [step]);
   
-  // Chama onRecordingComplete quando a gravação termina
-  useEffect(() => {
-      if (step === 'finished') {
-          onRecordingComplete();
-      }
-  }, [step, onRecordingComplete]);
+  // O onRecordingComplete é chamado no onStop do mediaRecorder
+  // useEffect(() => {
+  //     if (step === 'finished') {
+  //         onRecordingComplete();
+  //     }
+  // }, [step, onRecordingComplete]);
 
   return (
     <Box
