@@ -546,45 +546,39 @@ const RecordingPage: React.FC = () => {
       );
       setUploadError(null);
       setAudioForRetry(null);
-      if (!is_room_tone) {
-        advanceToNextPhrase();
-      }
+     
     } catch (error: any) {
       setUploadError(error);
       setAudioForRetry(audioBlob);
     } finally {
       setIsProcessing(false);
     }
-  }, [session, token, phrases, currentPhraseIndex, advanceToNextPhrase]);
+  }, [session, token, phrases, currentPhraseIndex]);
 
   const processPhraseChange = useCallback(async (skip = false) => {
     if (!session || !token) return;
 
-    // Stop recording and freeze UI immediately
-    
     setIsUIPaused(true);
-    setIsRecording(false); // Set to false to show "Pronto" status and freeze UI
+    setIsRecording(false);
 
-    // Clean canvas, reset timer and dBFS for the next recording, but keep UI frozen
     setTimer(0);
     setDbfs(-100);
-    const canvas = canvasRef.current;
-    if (canvas) {
-        const canvasCtx = canvas.getContext('2d');
-        if (canvasCtx) {
-            canvasCtx.fillStyle = '#1e1e1e';
-            canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
-        }
-    }
 
     if (skip) {
       stopRecording(true);
       setCountdown(3);
-    } else {
-      stopRecording(false, sendAudioData);
+      return;
     }
+
+    stopRecording(false, async (blob) => {
+      // ✅ ENVIA IMEDIATAMENTE
+      await sendAudioData(blob);
+
+      // ✅ DEPOIS inicia contagem
+      setCountdown(3);
+    });
+
   }, [session, token, stopRecording, sendAudioData]);
-  
   const handleRetryUpload = () => {
     if (audioForRetry) {
       sendAudioData(audioForRetry);
@@ -599,14 +593,15 @@ const RecordingPage: React.FC = () => {
 
   useEffect(() => {
     if (countdown === null) return;
-  
+
     if (countdown === 0) {
       setCountdown(null);
-      advanceToNextPhrase();
+      advanceToNextPhrase(); // ✅ Só troca a frase aqui
     } else {
       const timer = setTimeout(() => {
-        setCountdown(countdown - 1);
+        setCountdown(prev => (prev !== null ? prev - 1 : null));
       }, 1000);
+
       return () => clearTimeout(timer);
     }
   }, [countdown, advanceToNextPhrase]);
