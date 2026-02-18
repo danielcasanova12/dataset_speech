@@ -191,45 +191,74 @@ const RecordingPage: React.FC = () => {
 
     draw();
   }, [setDbfs]);
-  
+  // Substitua sua função stopRecording por esta:
   const stopRecording = useCallback((cleanupStream = true, onBlobAvailable?: (blob: Blob) => void) => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-        audioChunksRef.current = [];
-        if (onBlobAvailable) {
+      // 1. Para o MediaRecorder e MATA a referência
+      if (mediaRecorderRef.current) {
+        if (mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.onstop = () => {
+            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+            audioChunksRef.current = [];
+            if (onBlobAvailable) {
+              onBlobAvailable(audioBlob);
+            }
+          };
+          try {
+            mediaRecorderRef.current.stop();
+          } catch (e) { console.warn("Erro ao parar recorder:", e); }
+        } else if (onBlobAvailable && audioChunksRef.current.length > 0) {
+          // Fallback se já estava inativo
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
           onBlobAvailable(audioBlob);
         }
-      };
-      mediaRecorderRef.current.stop();
-    }
-    if (cleanupStream && streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    if (sourceRef.current) {
-      sourceRef.current.disconnect();
-      sourceRef.current = null;
-    }
-    if(analyserRef.current) {
-        analyserRef.current = null;
-    }
-    if (animationFrameId.current) {
-      cancelAnimationFrame(animationFrameId.current);
-      animationFrameId.current = null;
-    }
-    if (timerIntervalId.current) {
-      clearInterval(timerIntervalId.current);
-      timerIntervalId.current = null;
-    }
-    setIsRecording(false);
+        // O SEGREDO: Anula a referência para liberar o "lock"
+        mediaRecorderRef.current = null;
+      }
+      
+      // 2. Limpa o Stream
+      if (cleanupStream && streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      
+      // 3. Desconecta o Source
+      if (sourceRef.current) {
+        try { sourceRef.current.disconnect(); } catch(e) {}
+        sourceRef.current = null;
+      }
+
+      // 4. Limpeza de Timers e Animações
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+        animationFrameId.current = null;
+      }
+      
+      if (timerIntervalId.current) {
+        clearInterval(timerIntervalId.current);
+        timerIntervalId.current = null;
+      }
+      
+      setIsRecording(false);
   }, []);
 
+
   const startRecording = useCallback(async () => {
+    // Blinde o startRecording (Auto-Cura)
+    if (mediaRecorderRef.current) {
+        console.warn("startRecording called but MediaRecorder exists. Force stopping to self-heal.");
+        stopRecording(true);
+    }
+
     try {
+      // Limpeza de segurança
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+      
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
+      // Audio Context Singleton
       if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
       }
@@ -238,32 +267,45 @@ const RecordingPage: React.FC = () => {
       }
       
       const audioContext = audioContextRef.current;
-      analyserRef.current = audioContext.createAnalyser();
-      analyserRef.current.fftSize = 2048;
-      
-      sourceRef.current = audioContext.createMediaStreamSource(streamRef.current);
-      sourceRef.current.connect(analyserRef.current);
 
-      const recorder = new MediaRecorder(streamRef.current);
-      mediaRecorderRef.current = recorder;
+      // Analyser
+      if (!analyserRef.current) {
+        analyserRef.current = audioContext.createAnalyser();
+        analyserRef.current.fftSize = 2048;
+      }
+      
+      // Source
+      if (sourceRef.current) {
+         try { sourceRef.current.disconnect(); } catch(e) {}
+      }
+      
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyserRef.current);
+      sourceRef.current = source;
+
+      // Recorder
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder; // Define a ref ANTES de iniciar
     
       recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
       };
-    
+
       audioChunksRef.current = [];
       recorder.start();
+      
+      // Atualiza UI
       setIsRecording(true);
       setTimer(0);
       visualize();
 
     } catch (err) {
-      console.error("Error obtaining audio stream:", err);
-      setError("Não foi possível acessar o microfone. Verifique as permissões do seu navegador.");
+      console.error("Erro start:", err);
+      stopRecording(true);
+      // Opcional: Tentar novamente em 1s se falhar
     }
-  }, [visualize, setError]);
+  }, [visualize, stopRecording]);
+
 
   useEffect(() => {
     const createOrResumeSession = async () => {
@@ -353,11 +395,6 @@ const RecordingPage: React.FC = () => {
     fetchBlockData();
   }, []);
   
-  useEffect(() => {
-    if (preRecordingStep === 'recording' && !isRecording && !isUIPaused && !showBlockTutorialModal) {
-      startRecording();
-    }
-  }, [preRecordingStep, isRecording, isUIPaused, startRecording, showBlockTutorialModal]);
 
   useEffect(() => {
     const fetchCsvData = async () => {
@@ -446,7 +483,10 @@ const RecordingPage: React.FC = () => {
 
   const handleTutorialModalClose = () => {
     setShowBlockTutorialModal(false);
-    setIsUIPaused(false); // Descongela a UI para iniciar a gravação
+    setIsUIPaused(false);
+    setTimeout(() => {
+        startRecording();
+    }, 500);
   };
 
   const handleNextTutorialStep = useCallback(() => {
@@ -494,13 +534,17 @@ const RecordingPage: React.FC = () => {
     
     try {
       setIsProcessing(true);
-      // Limpeza completa do estado anterior (congelado) e reinício do stream
-      stopRecording(true); // Agora limpa o stream completamente
+      setIsUIPaused(true); 
+      
+      // 1. Matar a gravação anterior brutalmente
+      stopRecording(true); 
       
       const nextPhraseIndex = currentPhraseIndex + 1;
+      
       if (nextPhraseIndex < phrases.length) {
+        // Salva no banco (sem await para não travar UI)
         const updatedSession = { ...session, numero_frase: nextPhraseIndex };
-        await api.put(`/sessions/${session.id}`, updatedSession, token);
+        api.put(`/sessions/${session.id}`, updatedSession, token).catch(e => console.error(e));
         setSession(updatedSession);
         
         const currentBlockId = phrases[currentPhraseIndex].blockId;
@@ -509,21 +553,28 @@ const RecordingPage: React.FC = () => {
         setCurrentPhraseIndex(nextPhraseIndex);
 
         if (currentBlockId === nextBlockId) {
-          setIsUIPaused(false); // Descongela a UI se não houver mudança de bloco
-          startRecording(); // Reinicia a gravação explicitamente
+          // 2. Mesma bloco: espera o hardware limpar e inicia
+          setTimeout(() => {
+              setIsUIPaused(false);
+              startRecording(); 
+          }, 800); 
+        } else {
+           // 3. Mudança de bloco: Configura tutorial e NÃO inicia gravação
+           const tutorial = blockTutorials[nextBlockId] || { title: `Bloco ${nextBlockId}`, description: "Nova seção." };
+           setBlockTutorialContent(tutorial);
+           setShowBlockTutorialModal(true);
+           // Gravação será iniciada no fechamento do modal
         }
-        // Se houver mudança de bloco, a UI permanece congelada até o usuário fechar o tutorial
       } else {
-        setIsUIPaused(false);
-        stopRecording(true); // Para e limpa a gravação da última frase
+        stopRecording(true);
         setFinalizationStep('preRoomTone');
       }
     } catch (error) {
-        console.error("Falha ao avançar a frase (fim da contagem):", error);
+        console.error("Erro ao avançar:", error);
     } finally {
         setIsProcessing(false);
     }
-  }, [session, token, currentPhraseIndex, phrases, stopRecording, startRecording, setIsUIPaused]);
+  }, [session, token, currentPhraseIndex, phrases, stopRecording, startRecording]);
 
   const sendAudioData = useCallback(async (audioBlob: Blob, is_room_tone = false, blockId?: number) => {
     if (!session || !token) return;
