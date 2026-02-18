@@ -576,7 +576,7 @@ const RecordingPage: React.FC = () => {
     }
   }, [session, token, currentPhraseIndex, phrases, stopRecording, startRecording]);
 
-  const sendAudioData = useCallback(async (audioBlob: Blob, is_room_tone = false, blockId?: number) => {
+  const sendAudioData = useCallback(async (audioBlob: Blob, is_room_tone = false, blockId?: number, room_tone_type?: 'start' | 'end') => {
     if (!session || !token) return;
 
     try {
@@ -593,7 +593,8 @@ const RecordingPage: React.FC = () => {
         token,
         is_room_tone,
         !is_room_tone ? phrases[currentPhraseIndex].id : undefined,
-        !is_room_tone ? phrases[currentPhraseIndex].text : undefined
+        !is_room_tone ? phrases[currentPhraseIndex].text : undefined,
+        room_tone_type
       );
       setUploadError(null);
       setAudioForRetry(null);
@@ -691,8 +692,11 @@ const RecordingPage: React.FC = () => {
       }, 1000);
 
       const timeoutId = setTimeout(() => {
-        stopRecording();
-        setFinalizationStep('notes');
+        // Callback para capturar o blob e enviar
+        stopRecording(true, (blob) => {
+           sendAudioData(blob, true, 1, 'end'); // 'end' indica que é o room tone final
+           setFinalizationStep('notes');
+        });
       }, 5000);
 
       // Função de limpeza para evitar memory leaks
@@ -701,7 +705,7 @@ const RecordingPage: React.FC = () => {
         clearTimeout(timeoutId);
       };
     }
-  }, [finalizationStep, startRecording, stopRecording]);
+  }, [finalizationStep, startRecording, stopRecording, sendAudioData]);
   
   const handleNextPhrase = () => processPhraseChange(false);
   const handleSkipPhrase = () => processPhraseChange(true);
@@ -829,7 +833,7 @@ const RecordingPage: React.FC = () => {
 
   const handleRoomToneUpload = (audioBlob: Blob) => {
     // For the initial room tone, we can assume blockId 1
-    sendAudioData(audioBlob, true, 1); 
+    sendAudioData(audioBlob, true, 1, 'start'); 
     setPreRecordingStep('recording'); // Força a transição para a tela de gravação
     if (currentPhraseIndex === 0) {
       setIsUIPaused(true); // Pausa a nova tela para mostrar o tutorial

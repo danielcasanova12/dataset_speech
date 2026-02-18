@@ -240,6 +240,7 @@ export const api = {
     is_room_tone: boolean,
     phraseId?: number,
     frase_content?: string,
+    room_tone_type?: 'start' | 'end'
   ): Promise<any> => {
     const formData = new FormData();
     formData.append('session_id', sessionId.toString());
@@ -250,8 +251,8 @@ export const api = {
     formData.append('sample_rate', sampleRate.toString());
     formData.append('audio_file', audioBlob, 'recording.wav');
     formData.append('is_test', 'false');
-    formData.append('room_tone_start', '0');
-    formData.append('room_tone_end', '0');
+    formData.append('room_tone_start', room_tone_type === 'start' ? '1' : '0');
+    formData.append('room_tone_end', room_tone_type === 'end' ? '1' : '0');
     formData.append('is_room_tone', String(is_room_tone));
 
     if (phraseId) {
