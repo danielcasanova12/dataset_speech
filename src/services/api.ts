@@ -44,7 +44,7 @@ export interface SessionResponse {
   notes: string | null;
   vocal_health_note: string | null;
   termos: boolean;
-  status: 'active' | 'cancelada' | 'finalizada';
+  status: 'active' | 'cancelled' | 'finished';
   numero_frase: number;
 }
 

@@ -128,6 +128,7 @@ const RecordingPage: React.FC = () => {
   const [blockTutorialContent, setBlockTutorialContent] = useState({ title: '', description: '' });
 
   const sessionCreationLock = useRef(false);
+  const shouldAutoStartRef = useRef(false);
   const previousBlockIdRef = useRef<number | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaRecorderSampleRef = useRef<MediaRecorder | null>(null);
@@ -316,8 +317,17 @@ const RecordingPage: React.FC = () => {
       if (sessionToResume) {
         setSession(sessionToResume);
         setCurrentPhraseIndex(sessionToResume.numero_frase);
+        
+        // Reset states for clean resume
+        setIsProcessing(false);
+        setIsUIPaused(false);
+        setIsRecording(false);
+        setTimer(0);
+        setDbfs(-100);
+
         if (sessionToResume.numero_frase > 0) {
           setPreRecordingStep('recording');
+          shouldAutoStartRef.current = true; // Mark for auto-start
         } else {
           setPreRecordingStep('voiceCheck');
         }
@@ -425,6 +435,17 @@ const RecordingPage: React.FC = () => {
     };
     fetchCsvData();
   }, [session]);
+
+  useEffect(() => {
+    if (shouldAutoStartRef.current && !isLoading && phrases.length > 0 && preRecordingStep === 'recording') {
+      const timer = setTimeout(() => {
+        console.log("Auto-starting recording after resume...");
+        startRecording().catch(err => console.error("Auto-start failed:", err));
+        shouldAutoStartRef.current = false;
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading, phrases, preRecordingStep, startRecording]);
 
     useEffect(() => {
     if (!isTutorialActive) {
@@ -725,7 +746,7 @@ const RecordingPage: React.FC = () => {
       try {
         setIsLoading(true);
         const finished_at = new Date().toISOString();
-        await api.put(`/sessions/${existingSessionInfo.id}`, { ...existingSessionInfo, status: "cancelada", finished_at }, token);
+        await api.put(`/sessions/${existingSessionInfo.id}`, { ...existingSessionInfo, status: "cancelled", finished_at }, token);
         
         setShowExistingSessionModal(false);
         setExistingSessionInfo(null);
@@ -754,7 +775,7 @@ const RecordingPage: React.FC = () => {
   const confirmCancelSession = async () => {
     if (session && token) {
       try {
-        await api.put(`/sessions/${session.id}`, { ...session, status: "cancelada", finished_at: new Date().toISOString() }, token);
+        await api.put(`/sessions/${session.id}`, { ...session, status: "cancelled", finished_at: new Date().toISOString() }, token);
         navigate('/');
       } catch (error) {
         console.error("Failed to cancel session:", error);

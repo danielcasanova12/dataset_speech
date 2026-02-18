@@ -65,12 +65,7 @@ const RegisterPage: React.FC = () => {
   }, [formData.password, confirmPassword]);
 
   useEffect(() => {
-    const hasConsented = sessionStorage.getItem('has_consented_to_register');
-    if (hasConsented === 'true') {
-      setHasConsented(true);
-    } else {
-      setConsentModalOpen(true);
-    }
+    setConsentModalOpen(true);
   }, []);
 
   const handleAcceptConsent = () => {

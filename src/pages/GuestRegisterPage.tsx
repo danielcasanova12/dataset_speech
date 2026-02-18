@@ -49,12 +49,9 @@ const GuestRegisterPage: React.FC = () => {
       .then(response => response.json())
       .then(data => setEstados(data.sort((a: IBGEUFResponse, b: IBGEUFResponse) => a.nome.localeCompare(b.nome))));
 
-    const hasConsentedGuest = sessionStorage.getItem('has_consented_guest');
-    if (hasConsentedGuest === 'true') {
-      setHasConsented(true);
-    } else {
+    
       setConsentModalOpen(true);
-    }
+    
   }, []);
 
   const handleAcceptConsent = () => {
