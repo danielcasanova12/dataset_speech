@@ -127,6 +127,15 @@ const RecordingPage: React.FC = () => {
   const [showBlockTutorialModal, setShowBlockTutorialModal] = useState(false);
   const [blockTutorialContent, setBlockTutorialContent] = useState({ title: '', description: '' });
 
+  const [videoFinished, setVideoFinished] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  const isVideoPhrase = useCallback((index: number) => {
+    const phrase = phrases?.[index];
+    const src = phrase?.videoSrc;
+    return typeof src === 'string' && src.trim().length > 0;
+  }, [phrases]);
+
   const sessionCreationLock = useRef(false);
   const shouldAutoStartRef = useRef(false);
   const previousBlockIdRef = useRef<number | null>(null);
@@ -243,6 +252,19 @@ const RecordingPage: React.FC = () => {
   }, []);
 
 
+  const resetRecordingState = useCallback(() => {
+    if (timerIntervalId.current) {
+      clearInterval(timerIntervalId.current);
+      timerIntervalId.current = null;
+    }
+    setCountdown(null);
+    setIsRecording(false);
+    setIsUIPaused(false);
+    setTimer(0);
+    setDbfs(-100);
+  }, []);
+
+
   const startRecording = useCallback(async () => {
     // Blinde o startRecording (Auto-Cura)
     if (mediaRecorderRef.current) {
@@ -307,6 +329,12 @@ const RecordingPage: React.FC = () => {
     }
   }, [visualize, stopRecording]);
 
+  const startPhraseFlow = useCallback((index: number) => {
+    if (isVideoPhrase(index)) {
+      return;
+    }
+    startRecording().catch(err => console.error("Auto-start failed:", err));
+  }, [isVideoPhrase, startRecording]);
 
   useEffect(() => {
     const createOrResumeSession = async () => {
@@ -421,11 +449,29 @@ const RecordingPage: React.FC = () => {
         if (!response.ok) throw new Error("Network response was not ok");
         const text = await response.text();
         const lines = text.trim().split('\n').slice(1);
+        const normalizeMediaPath = (path?: string) => {
+          if (!path) return "";
+          let normalized = path.replace(/\\/g, "/").trim();
+
+          const index = normalized.toLowerCase().indexOf('/video/');
+          if (index !== -1) {
+              normalized = normalized.substring(index);
+          } else if (!normalized.startsWith("/")) {
+              normalized = "/" + normalized;
+          }
+          return normalized;
+        };
+
         const data: Phrase[] = lines.map(line => {
           const regex = /(?<=,|^)(?:"[^"]*"|[^,]*)/g;
           const matches = line.match(regex) || [];
           const [id, phraseText, blockId, videoSrc] = matches.map(field => field.replace(/"/g, ''));
-          return { id: parseInt(id), text: phraseText, blockId: parseInt(blockId), videoSrc: videoSrc };
+          return {
+            id: parseInt(id),
+            text: phraseText,
+            blockId: parseInt(blockId),
+            videoSrc: normalizeMediaPath(videoSrc)
+          };
         });
         setPhrases(data);
         if (data.length === 0) {
@@ -444,12 +490,12 @@ const RecordingPage: React.FC = () => {
     if (shouldAutoStartRef.current && !isLoading && phrases.length > 0 && preRecordingStep === 'recording') {
       const timer = setTimeout(() => {
         console.log("Auto-starting recording after resume...");
-        startRecording().catch(err => console.error("Auto-start failed:", err));
+        startPhraseFlow(currentPhraseIndex);
         shouldAutoStartRef.current = false;
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [isLoading, phrases, preRecordingStep, startRecording]);
+  }, [isLoading, phrases, preRecordingStep, startPhraseFlow, currentPhraseIndex]);
 
     useEffect(() => {
     if (!isTutorialActive) {
@@ -510,20 +556,20 @@ const RecordingPage: React.FC = () => {
     setShowBlockTutorialModal(false);
     setIsUIPaused(false);
     setTimeout(() => {
-        startRecording();
+        startPhraseFlow(currentPhraseIndex);
     }, 500);
   };
 
   const handleNextTutorialStep = useCallback(() => {
     if (tutorialStep === 3) {
       setTutorialStep(null);
-      startRecording();
+      startPhraseFlow(currentPhraseIndex);
       setIsUIPaused(false); // Descongela a UI para iniciar a gravação
       setPreRecordingStep('recording'); // Garante que o estado de gravação seja ativado
     } else {
       setTutorialStep(prev => (prev === null ? null : prev + 1));
     }
-  }, [tutorialStep, startRecording]);
+  }, [tutorialStep, startPhraseFlow, currentPhraseIndex]);
 
   const getAudioMetadata = (audioBlob: Blob): Promise<{ duration: number; sampleRate: number }> => {
     return new Promise((resolve, reject) => {
@@ -563,6 +609,7 @@ const RecordingPage: React.FC = () => {
       
       // 1. Matar a gravação anterior brutalmente
       stopRecording(true); 
+      resetRecordingState();
       
       const nextPhraseIndex = currentPhraseIndex + 1;
       
@@ -581,7 +628,7 @@ const RecordingPage: React.FC = () => {
           // 2. Mesma bloco: espera o hardware limpar e inicia
           setTimeout(() => {
               setIsUIPaused(false);
-              startRecording(); 
+              startPhraseFlow(nextPhraseIndex);
           }, 800); 
         } else {
            // 3. Mudança de bloco: Configura tutorial e NÃO inicia gravação
@@ -592,6 +639,7 @@ const RecordingPage: React.FC = () => {
         }
       } else {
         stopRecording(true);
+        resetRecordingState();
         setFinalizationStep('preRoomTone');
       }
     } catch (error) {
@@ -599,7 +647,7 @@ const RecordingPage: React.FC = () => {
     } finally {
         setIsProcessing(false);
     }
-  }, [session, token, currentPhraseIndex, phrases, stopRecording, startRecording]);
+  }, [session, token, currentPhraseIndex, phrases, stopRecording, resetRecordingState, startPhraseFlow]);
 
   const sendAudioData = useCallback(async (audioBlob: Blob, is_room_tone = false, blockId?: number, room_tone_type?: 'start' | 'end') => {
     if (!session || !token) return;
@@ -684,6 +732,10 @@ const RecordingPage: React.FC = () => {
   }, [countdown, advanceToNextPhrase]);
 
   useEffect(() => {
+    setVideoFinished(false);
+  }, [currentPhraseIndex]);
+
+  useEffect(() => {
     if (isRecording && !isUIPaused) {
       timerIntervalId.current = setInterval(() => setTimer((prev) => prev + 1), 1000);
     } else {
@@ -734,6 +786,20 @@ const RecordingPage: React.FC = () => {
   
   const handleNextPhrase = () => processPhraseChange(false);
   const handleSkipPhrase = () => processPhraseChange(true);
+
+  const handleNextVideoPhrase = useCallback(() => {
+    resetRecordingState();
+    advanceToNextPhrase();
+  }, [resetRecordingState, advanceToNextPhrase]);
+
+  const replayVideo = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    video.currentTime = 0;
+    video.play();
+    setVideoFinished(false);
+  }, []);
 
   const handleResumeSession = useCallback(() => {
     if (existingSessionInfo) {
@@ -946,30 +1012,58 @@ const RecordingPage: React.FC = () => {
                   <Typography variant="body2" color="text.secondary" textAlign="center">{`${currentPhraseIndex + 1} de ${totalPhrases} frases`}</Typography>
                 </Box>
                 
-                <Box display="flex" alignItems="center" mb={1}>
-                  {isRecording && <FiberManualRecordIcon sx={{ color: 'red', animation: 'blinking 1s infinite' }} />}
-                  <Typography variant="h6" sx={{ ml: 1 }}>{isRecording ? 'Gravando...' : 'Pronto'}</Typography>
-                  <Box flexGrow={1} />
-                  <Typography variant="h6" sx={{ color: getDbfsColor(dbfs), mr: 2, fontWeight: 'bold' }}>
-                    {(isRecording || isUIPaused) && isFinite(dbfs) ? `${dbfs.toFixed(2)} dBFS` : ''}
-                  </Typography>
-                  <Typography ref={timerElementRef} variant="h6">{formatTime(timer)}</Typography>
-                </Box>
+                {isVideoPhrase(currentPhraseIndex) ? (
+                  <Box display="flex" flexDirection="column" alignItems="center">
+                    <Box sx={{ width: '100%', maxWidth: '800px', mb: 2, backgroundColor: '#000', borderRadius: 1, overflow: 'hidden' }}>
+                      <video
+                        ref={videoRef}
+                        src={currentPhrase.videoSrc}
+                        style={{ width: '100%', display: 'block' }}
+                        autoPlay
+                        muted
+                        playsInline
+                        preload="auto"
+                        onEnded={() => setVideoFinished(true)}
+                        onError={() => handleNextVideoPhrase()}
+                      />
+                    </Box>
+                    {videoFinished && (
+                      <Box mt={2} display="flex" justifyContent="center" gap={4}>
+                        <Button variant="outlined" onClick={replayVideo}>Ver novamente</Button>
+                        <Button variant="contained" color="primary" onClick={handleNextVideoPhrase} disabled={isProcessing}>
+                          {isProcessing ? <CircularProgress size={24} /> : 'Próximo'}
+                        </Button>
+                      </Box>
+                    )}
+                  </Box>
+                ) : (
+                  <>
+                    <Box display="flex" alignItems="center" mb={1}>
+                      {isRecording && <FiberManualRecordIcon sx={{ color: 'red', animation: 'blinking 1s infinite' }} />}
+                      <Typography variant="h6" sx={{ ml: 1 }}>{isRecording ? 'Gravando...' : 'Pronto'}</Typography>
+                      <Box flexGrow={1} />
+                      <Typography variant="h6" sx={{ color: getDbfsColor(dbfs), mr: 2, fontWeight: 'bold' }}>
+                        {(isRecording || isUIPaused) && isFinite(dbfs) ? `${dbfs.toFixed(2)} dBFS` : ''}
+                      </Typography>
+                      <Typography ref={timerElementRef} variant="h6">{formatTime(timer)}</Typography>
+                    </Box>
 
-                <Box sx={{ height: 100, backgroundColor: '#1e1e1e', mb: 2, borderRadius: 1 }}>
-                  <canvas ref={canvasRef} width="600" height="100" style={{ width: '100%', height: '100%' }} />
-                </Box>
-                
-                <Typography ref={phraseTextRef} variant="h4" sx={{ minHeight: 100, textAlign: 'center', my: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {currentPhrase.text}
-                </Typography>
-                
-                <Box mt={4} display="flex" justifyContent="space-around">
-                  <Button ref={skipButtonRef} variant="outlined" onClick={handleSkipPhrase} disabled={isProcessing || countdown !== null}>Pular Áudio</Button>
-                  <Button ref={saveButtonRef} variant="contained" color="primary" onClick={handleNextPhrase} disabled={isProcessing || !isRecording || countdown !== null}>
-                    {isProcessing ? <CircularProgress size={24} /> : 'Salvar e Próxima'}
-                  </Button>
-                </Box>
+                    <Box sx={{ height: 100, backgroundColor: '#1e1e1e', mb: 2, borderRadius: 1 }}>
+                      <canvas ref={canvasRef} width="600" height="100" style={{ width: '100%', height: '100%' }} />
+                    </Box>
+
+                    <Typography ref={phraseTextRef} variant="h4" sx={{ minHeight: 100, textAlign: 'center', my: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {currentPhrase.text}
+                    </Typography>
+
+                    <Box mt={4} display="flex" justifyContent="space-around">
+                      <Button ref={skipButtonRef} variant="outlined" onClick={handleSkipPhrase} disabled={isProcessing || countdown !== null}>Pular Áudio</Button>
+                      <Button ref={saveButtonRef} variant="contained" color="primary" onClick={handleNextPhrase} disabled={isProcessing || !isRecording || countdown !== null}>
+                        {isProcessing ? <CircularProgress size={24} /> : 'Salvar e Próxima'}
+                      </Button>
+                    </Box>
+                  </>
+                )}
               </Paper>
             ) : (
               isLoading ? <CircularProgress /> : (
