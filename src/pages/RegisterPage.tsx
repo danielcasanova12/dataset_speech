@@ -6,7 +6,13 @@ import { UserRegistrationData } from '../services/api';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import HowToRegOutlinedIcon from '@mui/icons-material/HowToRegOutlined';
+import Visibility from '@mui/icons-material/Visibility';
+import VisibilityOff from '@mui/icons-material/VisibilityOff';
+import { InputAdornment } from '@mui/material';
 import ConsentScreen from '../components/ConsentScreen';
+import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import dayjs from 'dayjs';
 
 interface IBGEUFResponse {
   id: number;
@@ -38,6 +44,8 @@ const RegisterPage: React.FC = () => {
   const [cidadesNascimento, setCidadesNascimento] = useState<IBGECidadeResponse[]>([]);
   const [cidadesAtual, setCidadesAtual] = useState<IBGECidadeResponse[]>([]);
   const [cidadesHistorico, setCidadesHistorico] = useState<{ [key: number]: IBGECidadeResponse[] }>({});
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const { register } = useAuth();
   const navigate = useNavigate();
 
@@ -190,7 +198,25 @@ const RegisterPage: React.FC = () => {
                     <TextField required fullWidth label="Nome Completo" name="nome_completo" value={formData.nome_completo} onChange={handleChange} />
                   </Grid>
                   <Grid item xs={12} sm={6}>
-                    <TextField required fullWidth label="Data de Nascimento" name="data_nascimento" type="date" InputLabelProps={{ shrink: true }} value={formData.data_nascimento} onChange={handleChange} />
+                    <LocalizationProvider dateAdapter={AdapterDayjs}>
+                      <DatePicker
+                        label="Data de Nascimento *"
+                        value={formData.data_nascimento ? dayjs(formData.data_nascimento) : null}
+                        onChange={(newValue) => {
+                          setFormData(prev => ({
+                            ...prev,
+                            data_nascimento: newValue ? newValue.format('YYYY-MM-DD') : ''
+                          }));
+                        }}
+                        format="DD/MM/YYYY"
+                        slotProps={{
+                          textField: {
+                            fullWidth: true,
+                            required: true,
+                          }
+                        }}
+                      />
+                    </LocalizationProvider>
                   </Grid>
                   <Grid item xs={12} sm={6}>
                     <FormControl fullWidth required>
@@ -225,11 +251,24 @@ const RegisterPage: React.FC = () => {
                             fullWidth 
                             label="Senha" 
                             name="password" 
-                            type="password" 
+                            type={showPassword ? 'text' : 'password'}
                             value={formData.password} 
                             onChange={handleChange} 
                             error={!!validationError.password}
                             helperText={validationError.password}
+                            InputProps={{
+                              endAdornment: (
+                                <InputAdornment position="end">
+                                  <IconButton
+                                    aria-label="toggle password visibility"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    edge="end"
+                                  >
+                                    {showPassword ? <VisibilityOff /> : <Visibility />}
+                                  </IconButton>
+                                </InputAdornment>
+                              )
+                            }}
                         />
                     </Grid>
                     <Grid item xs={12} sm={6}>
@@ -238,11 +277,24 @@ const RegisterPage: React.FC = () => {
                             fullWidth 
                             label="Confirmar Senha" 
                             name="confirmPassword" 
-                            type="password" 
+                            type={showConfirmPassword ? 'text' : 'password'}
                             value={confirmPassword} 
                             onChange={(e) => setConfirmPassword(e.target.value)}
                             error={!!validationError.password}
                             helperText={validationError.password}
+                            InputProps={{
+                              endAdornment: (
+                                <InputAdornment position="end">
+                                  <IconButton
+                                    aria-label="toggle confirm password visibility"
+                                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                    edge="end"
+                                  >
+                                    {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
+                                  </IconButton>
+                                </InputAdornment>
+                              )
+                            }}
                         />
                     </Grid>
                 </Grid>
@@ -386,7 +438,12 @@ const RegisterPage: React.FC = () => {
                 <Button type="submit" fullWidth variant="contained" size="large" disabled={isLoading || !!validationError.password || !hasConsented} sx={{ mt: 4 }}>
                     {isLoading ? 'Cadastrando...' : 'Cadastrar'}
                 </Button>
-                <Grid container justifyContent="flex-end" sx={{mt: 2}}>
+                <Grid container justifyContent="space-between" sx={{mt: 2}}>
+                    <Grid item>
+                        <Button component={Link} to="/" variant="text" color="primary">
+                            Voltar
+                        </Button>
+                    </Grid>
                     <Grid item>
                         <MuiLink component={Link} to="/login" variant="body2">
                         {"Já tem uma conta? Faça Login"}

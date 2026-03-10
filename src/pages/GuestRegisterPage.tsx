@@ -7,6 +7,9 @@ import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import HowToRegOutlinedIcon from '@mui/icons-material/HowToRegOutlined';
 import ConsentScreen from '../components/ConsentScreen';
+import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import dayjs from 'dayjs';
 
 interface IBGEUFResponse {
   id: number;
@@ -183,7 +186,25 @@ const GuestRegisterPage: React.FC = () => {
                     />
                   </Grid>
                   <Grid item xs={12} sm={6}>
-                    <TextField required fullWidth label="Data de Nascimento" name="data_nascimento" type="date" InputLabelProps={{ shrink: true }} value={formData.data_nascimento} onChange={handleChange} />
+                    <LocalizationProvider dateAdapter={AdapterDayjs}>
+                      <DatePicker
+                        label="Data de Nascimento *"
+                        value={formData.data_nascimento ? dayjs(formData.data_nascimento) : null}
+                        onChange={(newValue) => {
+                          setFormData(prev => ({
+                            ...prev,
+                            data_nascimento: newValue ? newValue.format('YYYY-MM-DD') : ''
+                          }));
+                        }}
+                        format="DD/MM/YYYY"
+                        slotProps={{
+                          textField: {
+                            fullWidth: true,
+                            required: true,
+                          }
+                        }}
+                      />
+                    </LocalizationProvider>
                   </Grid>
                   <Grid item xs={12} sm={6}>
                     <FormControl fullWidth required>
@@ -336,7 +357,12 @@ const GuestRegisterPage: React.FC = () => {
                 <Button type="submit" fullWidth variant="contained" size="large" disabled={isLoading || !!validationError.email || !hasConsented} sx={{ mt: 4 }}>
                     {isLoading ? 'Entrando...' : 'Entrar como Visitante'}
                 </Button>
-                <Grid container justifyContent="flex-end" sx={{mt: 2}}>
+                <Grid container justifyContent="space-between" sx={{mt: 2}}>
+                    <Grid item>
+                        <Button component={Link} to="/" variant="text" color="primary">
+                            Voltar
+                        </Button>
+                    </Grid>
                     <Grid item>
                         <MuiLink component={Link} to="/login" variant="body2">
                         {"Já tem uma conta? Faça Login"}
