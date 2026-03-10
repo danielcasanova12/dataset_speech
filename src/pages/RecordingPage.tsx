@@ -331,6 +331,9 @@ const RecordingPage: React.FC = () => {
 
   const startPhraseFlow = useCallback((index: number) => {
     if (isVideoPhrase(index)) {
+      if (videoRef.current) {
+        videoRef.current.play().catch(err => console.error("Auto-play video failed:", err));
+      }
       return;
     }
     startRecording().catch(err => console.error("Auto-start failed:", err));
@@ -1019,7 +1022,6 @@ const RecordingPage: React.FC = () => {
                         ref={videoRef}
                         src={currentPhrase.videoSrc}
                         style={{ width: '100%', maxHeight: '60vh', objectFit: 'contain', display: 'block' }}
-                        autoPlay
                         playsInline
                         preload="auto"
                         onEnded={() => setVideoFinished(true)}
