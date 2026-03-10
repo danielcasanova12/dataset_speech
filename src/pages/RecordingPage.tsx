@@ -385,12 +385,13 @@ const RecordingPage: React.FC = () => {
       }
     };
     createOrResumeSession();
-  }, [token, datasetId, navigate, location.state, session, retryCount]);
+  }, [token, datasetId, navigate, location.state, location.pathname, session, retryCount]);
 
   useEffect(() => {
     const fetchBlockData = async () => {
       try {
-        const response = await fetch(`${process.env.PUBLIC_URL}/block.csv`);
+        const response = await fetch(`${window.location.origin}/block.csv`);
+        if (!response.ok) throw new Error("Network response was not ok");
         const text = await response.text();
         const lines = text.trim().split('\n').slice(1);
         const blockData: Block[] = lines.map(line => {
@@ -414,7 +415,10 @@ const RecordingPage: React.FC = () => {
 
       setIsLoading(true);
       try {
-        const response = await fetch(`${process.env.PUBLIC_URL}/${datasetInfo.csvFile}`);
+        const fetchUrl = `${window.location.origin}/${datasetInfo.csvFile}`;
+        console.log("Fetching CSV from:", fetchUrl);
+        const response = await fetch(fetchUrl);
+        if (!response.ok) throw new Error("Network response was not ok");
         const text = await response.text();
         const lines = text.trim().split('\n').slice(1);
         const data: Phrase[] = lines.map(line => {
@@ -790,7 +794,7 @@ const RecordingPage: React.FC = () => {
       try {
         await api.put(`/sessions/${session.id}`, { 
           ...session, 
-          status: "finalizada", 
+          status: "finished", 
           notes: sessionNotes,
           finished_at: new Date().toISOString() 
         }, token);

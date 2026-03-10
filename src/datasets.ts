@@ -6,9 +6,7 @@ export interface DatasetInfo {
 }
 
 export const DATASETS: DatasetInfo[] = [
-  { frontendId: 11, backendId: 1, name: "Voz Geral 10 min", csvFile: "11_voz_geral_10m.csv" },
-  { frontendId: 21, backendId: 3, name: "Emoção 10 min", csvFile: "21_emocao_10m.csv" },
-  { frontendId: 23, backendId: 3, name: "Emoção 30 min", csvFile: "23_emocao_30m.csv" },
+  { frontendId: 11, backendId: 1, name: "Voz Geral 10 min", csvFile: "11_voz_geral_10m.csv" }
 ];
 
 export const findByFrontendId = (id: number): DatasetInfo | undefined => 

@@ -256,7 +256,7 @@ export const api = {
     formData.append('is_room_tone', String(is_room_tone));
 
     if (phraseId) {
-      formData.append('phrase_id', phraseId.toString());
+      formData.append('frase_id', phraseId.toString());
     }
     if (frase_content) {
       formData.append('frase_content', frase_content);
