@@ -88,7 +88,7 @@ const RecordingPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { datasetId } = useParams<{ datasetId: string }>();
-  const { token } = useAuth();
+  const { token, setActiveSessionInfo } = useAuth();
   
   const [phrases, setPhrases] = useState<Phrase[]>([]);
   const [blocks, setBlocks] = useState<Block[]>([]);
@@ -347,6 +347,7 @@ const RecordingPage: React.FC = () => {
 
       if (sessionToResume) {
         setSession(sessionToResume);
+        setActiveSessionInfo(sessionToResume.id, sessionToResume.created_at);
         setCurrentPhraseIndex(sessionToResume.numero_frase);
         
         // Reset states for clean resume
@@ -391,6 +392,7 @@ const RecordingPage: React.FC = () => {
       try {
         const newSession = await api.createSession(datasetInfo.backendId, true, token);
         setSession(newSession);
+        setActiveSessionInfo(newSession.id, newSession.created_at);
         setCurrentPhraseIndex(0);
         setPreRecordingStep('voiceCheck');
         setRetryCount(0); // Reset retry count on success
@@ -834,6 +836,7 @@ const RecordingPage: React.FC = () => {
 
         const newSession = await api.createSession(datasetInfo.backendId, true, token);
         setSession(newSession);
+        setActiveSessionInfo(newSession.id, newSession.created_at);
         setCurrentPhraseIndex(0);
         setPreRecordingStep('voiceCheck');
       } catch (error) {
@@ -849,6 +852,7 @@ const RecordingPage: React.FC = () => {
     if (session && token) {
       try {
         await api.put(`/sessions/${session.id}`, { ...session, status: "cancelled", finished_at: new Date().toISOString() }, token);
+        setActiveSessionInfo(null, null);
         navigate('/');
       } catch (error) {
         console.error("Failed to cancel session:", error);
@@ -867,6 +871,7 @@ const RecordingPage: React.FC = () => {
           notes: sessionNotes,
           finished_at: new Date().toISOString() 
         }, token);
+        setActiveSessionInfo(null, null);
         setFinalizationStep('idle');
         setOpenFinishModal(true);
       } catch (error) {
