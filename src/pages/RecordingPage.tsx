@@ -1018,9 +1018,8 @@ const RecordingPage: React.FC = () => {
                       <video
                         ref={videoRef}
                         src={currentPhrase.videoSrc}
-                        style={{ width: '100%', display: 'block' }}
+                        style={{ width: '100%', maxHeight: '60vh', objectFit: 'contain', display: 'block' }}
                         autoPlay
-                        muted
                         playsInline
                         preload="auto"
                         onEnded={() => setVideoFinished(true)}
