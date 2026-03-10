@@ -347,7 +347,7 @@ const RecordingPage: React.FC = () => {
 
       if (sessionToResume) {
         setSession(sessionToResume);
-        setActiveSessionInfo(sessionToResume.id, sessionToResume.created_at);
+        setActiveSessionInfo(sessionToResume.id, sessionToResume.started_at);
         setCurrentPhraseIndex(sessionToResume.numero_frase);
         
         // Reset states for clean resume
@@ -392,7 +392,7 @@ const RecordingPage: React.FC = () => {
       try {
         const newSession = await api.createSession(datasetInfo.backendId, true, token);
         setSession(newSession);
-        setActiveSessionInfo(newSession.id, newSession.created_at);
+        setActiveSessionInfo(newSession.id, newSession.started_at);
         setCurrentPhraseIndex(0);
         setPreRecordingStep('voiceCheck');
         setRetryCount(0); // Reset retry count on success
@@ -836,7 +836,7 @@ const RecordingPage: React.FC = () => {
 
         const newSession = await api.createSession(datasetInfo.backendId, true, token);
         setSession(newSession);
-        setActiveSessionInfo(newSession.id, newSession.created_at);
+        setActiveSessionInfo(newSession.id, newSession.started_at);
         setCurrentPhraseIndex(0);
         setPreRecordingStep('voiceCheck');
       } catch (error) {
