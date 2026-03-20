@@ -18,8 +18,8 @@ get_block_tutorial = '''const getBlockTutorial = (blockId: number, blocks: Block
   if (block.isSpontaneous) {
     return {
       title: block.name,
-      description: `Assista ao vídeo e responda de forma espontânea, expressando a emoção que você sentiu ao vê-lo (${emotionName}).`,
-      instruction: `Espontâneo: Responda com a emoção que sentiu ao ver o vídeo`
+      description: `Assista ao vídeo e Leia de forma espontânea, expressando a emoção que você sentiu ao vê-lo.`,
+      instruction: `Espontâneo: Leia com a emoção que sentiu ao ver o vídeo`
     };
   } else {
     return {

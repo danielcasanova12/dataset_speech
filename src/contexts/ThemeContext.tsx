@@ -1,51 +1,60 @@
 import React, { createContext, useState, useMemo, useContext, ReactNode } from 'react';
 import { createTheme, ThemeProvider as MuiThemeProvider, PaletteMode } from '@mui/material';
 
-// Define the shape of the context
 interface ThemeContextType {
   toggleTheme: () => void;
   mode: PaletteMode;
 }
 
-// Create the context
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-// Define the color palettes
+// 🎨 Paletas melhoradas
 const lightPalette = {
   primary: {
-    main: '#7d3bed', // Nova cor para botões
+    main: '#6C2BD9',
+    light: '#9B6EF3',
+    dark: '#4B1FA8',
+    contrastText: '#FFFFFF',
   },
   secondary: {
-    main: '#00aeff', // Nova cor para links
+    main: '#0095E0',
+    light: '#33B5FF',
+    dark: '#006BB3',
+    contrastText: '#FFFFFF',
   },
   background: {
-    default: '#F8F9FA', // Branco gelo
+    default: '#F8F9FA',
     paper: '#FFFFFF',
   },
   text: {
-    primary: '#2D2D2E', // Cinza chumbo
+    primary: '#2D2D2E',
+    secondary: '#6B6B6B',
   },
 };
 
 const darkPalette = {
   primary: {
-    main: '#7d3bed',  // Nova cor para botões
+    main: '#8B5CF6',
+    light: '#A78BFA',
+    dark: '#6D28D9',
+    contrastText: '#FFFFFF',
   },
   secondary: {
-    main: '#00aeff', // Nova cor para links
+    main: '#38BDF8',
+    light: '#7DD3FC',
+    dark: '#0284C7',
+    contrastText: '#000000',
   },
   background: {
-    default: '#1A1A1B', // Cinza escuro do texto
-    paper: '#333335', // Cinza médio
+    default: '#121212',
+    paper: '#1E1E1F',
   },
   text: {
     primary: '#FFFFFF',
-    secondary: '#E0E0E0',
+    secondary: '#B0B0B0',
   },
 };
 
-
-// Create the provider component
 export const CustomThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [mode, setMode] = useState<PaletteMode>('dark');
 
@@ -55,6 +64,7 @@ export const CustomThemeProvider: React.FC<{ children: ReactNode }> = ({ childre
 
   const theme = useMemo(() => {
     const selectedPalette = mode === 'light' ? lightPalette : darkPalette;
+
     return createTheme({
       palette: {
         mode,
@@ -68,70 +78,75 @@ export const CustomThemeProvider: React.FC<{ children: ReactNode }> = ({ childre
           styleOverrides: {
             root: {
               textTransform: 'none',
+              borderRadius: 8,
+              fontWeight: 500,
             },
-            containedPrimary: {
-              backgroundColor: '#7d3bed',
+            containedPrimary: ({ theme }) => ({
+              backgroundColor: theme.palette.primary.main,
+              color: theme.palette.primary.contrastText,
               '&:hover': {
-                backgroundColor: '#6a2bd0',
+                backgroundColor: theme.palette.primary.dark,
               },
-            },
-            outlinedPrimary: {
-                color: '#7d3bed',
-                borderColor: '#7d3bed',
-                '&:hover': {
-                    borderColor: '#6a2bd0',
-                    backgroundColor: 'rgba(125, 59, 237, 0.04)',
-                },
-            },
-            textPrimary: {
-                color: '#7d3bed',
-                '&:hover': {
-                    backgroundColor: 'rgba(125, 59, 237, 0.04)',
-                },
-            },
+            }),
+            outlinedPrimary: ({ theme }) => ({
+              color: theme.palette.primary.main,
+              borderColor: theme.palette.primary.main,
+              '&:hover': {
+                borderColor: theme.palette.primary.dark,
+                backgroundColor: `${theme.palette.primary.main}10`,
+              },
+            }),
+            textPrimary: ({ theme }) => ({
+              color: theme.palette.primary.main,
+              '&:hover': {
+                backgroundColor: `${theme.palette.primary.main}10`,
+              },
+            }),
           },
         },
+
         MuiLink: {
-            styleOverrides: {
-                root: {
-                    color: '#00aeff',
-                    textDecoration: 'none',
-                    '&:hover': {
-                        textDecoration: 'underline',
-                    },
-                },
-            },
+          styleOverrides: {
+            root: ({ theme }) => ({
+              color: theme.palette.secondary.main,
+              textDecoration: 'none',
+              '&:hover': {
+                textDecoration: 'underline',
+                color: theme.palette.secondary.dark,
+              },
+            }),
+          },
         },
+
         MuiTextField: {
           styleOverrides: {
-            root: {
-              // This targets the label color
+            root: ({ theme }) => ({
               '& .MuiInputLabel-root': {
-                color: mode === 'light' ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.7)',
+                color: theme.palette.text.secondary,
               },
-              // This targets the input text color
               '& .MuiInputBase-input': {
-                color: mode === 'light' ? '#000000' : '#FFFFFF',
+                color: theme.palette.text.primary,
               },
-            },
+            }),
           },
         },
+
         MuiOutlinedInput: {
           styleOverrides: {
-            root: {
-              // Default border color
+            root: ({ theme }) => ({
               '& .MuiOutlinedInput-notchedOutline': {
-                borderColor: mode === 'light' ? 'rgba(0, 0, 0, 0.23)' : 'rgba(255, 255, 255, 0.23)',
+                borderColor: theme.palette.mode === 'light'
+                  ? 'rgba(0,0,0,0.23)'
+                  : 'rgba(255,255,255,0.23)',
               },
-              // Hover border color
               '&:hover .MuiOutlinedInput-notchedOutline': {
-                borderColor: mode === 'light' ? 'rgba(0, 0, 0, 0.5)' : 'rgba(255, 255, 255, 0.5)',
+                borderColor: theme.palette.primary.main,
               },
-              // Focused border color
               '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                borderColor: mode === 'light' ? '#000000' : '#FFFFFF',
+                borderColor: theme.palette.primary.main,
+                borderWidth: 2,
               },
-            },
+            }),
           },
         },
       },
@@ -147,10 +162,9 @@ export const CustomThemeProvider: React.FC<{ children: ReactNode }> = ({ childre
   );
 };
 
-// Custom hook to use the theme context
 export const useTheme = () => {
   const context = useContext(ThemeContext);
-  if (context === undefined) {
+  if (!context) {
     throw new Error('useTheme must be used within a CustomThemeProvider');
   }
   return context;
