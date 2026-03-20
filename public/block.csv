@@ -1,0 +1,106 @@
+blockId,name,emocao,espontaneidade
+1,Bloco de ruído,0,0
+2,Bloco de Leitura,0,0
+3,Bloco de Respostas,0,1
+4,Bloco de Emoção neutra,1,0
+5,Bloco de Emoção feliz,2,0
+6,Bloco de Emoção triste,3,0
+7,Bloco de Emoção raiva,4,0
+8,Bloco de Emoção surpresa,5,0
+9,Bloco de Emoção nojo,6,0
+10,Bloco de Emoção medo,7,0
+11,Bloco de Emoção desprezo,8,0
+12,Bloco de Emoção animado,9,0
+13,Bloco de Emoção ansioso,10,0
+14,Bloco de Emoção relaxado,11,0
+15,Bloco de Emoção frustrado,12,0
+16,Bloco de Emoção esperançoso,13,0
+17,Bloco de Emoção sobrecarregado,14,0
+18,Bloco de Emoção culpado,15,0
+19,Bloco de Emoção orgulhoso,16,0
+20,Bloco de Emoção ciúmes,17,0
+21,Bloco de Emoção amoroso,18,0
+22,Bloco de Emoção afetuoso,19,0
+23,Bloco de Emoção entediado,20,0
+24,Bloco de Emoção confuso,21,0
+25,Bloco de Emoção curioso,22,0
+26,Bloco de Emoção envergonhado,23,0
+27,Bloco de Emoção tímido,24,0
+28,Bloco de Emoção solitário,25,0
+29,Bloco de Emoção pacífico,26,0
+30,Bloco de Emoção grato,27,0
+31,Bloco de Emoção otimista,28,0
+32,Bloco de Emoção pessimista,29,0
+33,Bloco de Emoção estressado,30,0
+34,Bloco de Emoção desapontado,31,0
+35,Bloco de Emoção divertido,32,0
+36,Bloco de Emoção contente,33,0
+37,Bloco de Emoção inveja,34,0
+38,Bloco de Emoção nervoso,35,0
+39,Bloco de Emoção ressentido,36,0
+40,Bloco de Emoção surpresa feliz,37,0
+41,Bloco de Emoção surpresa triste,38,0
+42,Bloco de Emoção aliviado,39,0
+43,Bloco de Emoção cético,40,0
+44,Bloco de Emoção confiante,41,0
+45,Bloco de Emoção brincalhão,42,0
+46,Bloco de Emoção apático,43,0
+47,Bloco de Emoção desconfiado,44,0
+48,Bloco de Emoção seguro,45,0
+49,Bloco de Emoção humilde,46,0
+50,Bloco de Emoção determinado,47,0
+51,Bloco de Emoção orgulhoso (intenso),48,0
+52,Bloco de Emoção curioso animado,49,0
+53,Bloco de Emoção calmo,50,0
+54,Bloco de Emoção neutra espontânea,1,1
+55,Bloco de Emoção feliz espontânea,2,1
+56,Bloco de Emoção triste espontânea,3,1
+57,Bloco de Emoção raiva espontânea,4,1
+58,Bloco de Emoção surpresa espontânea,5,1
+59,Bloco de Emoção nojo espontânea,6,1
+60,Bloco de Emoção medo espontânea,7,1
+61,Bloco de Emoção desprezo espontânea,8,1
+62,Bloco de Emoção animado espontânea,9,1
+63,Bloco de Emoção ansioso espontânea,10,1
+64,Bloco de Emoção relaxado espontânea,11,1
+65,Bloco de Emoção frustrado espontânea,12,1
+66,Bloco de Emoção esperançoso espontânea,13,1
+67,Bloco de Emoção sobrecarregado espontânea,14,1
+68,Bloco de Emoção culpado espontânea,15,1
+69,Bloco de Emoção orgulhoso espontânea,16,1
+70,Bloco de Emoção ciúmes espontânea,17,1
+71,Bloco de Emoção amoroso espontânea,18,1
+72,Bloco de Emoção afetuoso espontânea,19,1
+73,Bloco de Emoção entediado espontânea,20,1
+74,Bloco de Emoção confuso espontânea,21,1
+75,Bloco de Emoção curioso espontânea,22,1
+76,Bloco de Emoção envergonhado espontânea,23,1
+77,Bloco de Emoção tímido espontânea,24,1
+78,Bloco de Emoção solitário espontânea,25,1
+79,Bloco de Emoção pacífico espontânea,26,1
+80,Bloco de Emoção grato espontânea,27,1
+81,Bloco de Emoção otimista espontânea,28,1
+82,Bloco de Emoção pessimista espontânea,29,1
+83,Bloco de Emoção estressado espontânea,30,1
+84,Bloco de Emoção desapontado espontânea,31,1
+85,Bloco de Emoção divertido espontânea,32,1
+86,Bloco de Emoção contente espontânea,33,1
+87,Bloco de Emoção inveja espontânea,34,1
+88,Bloco de Emoção nervoso espontânea,35,1
+89,Bloco de Emoção ressentido espontânea,36,1
+90,Bloco de Emoção surpresa feliz espontânea,37,1
+91,Bloco de Emoção surpresa triste espontânea,38,1
+92,Bloco de Emoção aliviado espontânea,39,1
+93,Bloco de Emoção cético espontânea,40,1
+94,Bloco de Emoção confiante espontânea,41,1
+95,Bloco de Emoção brincalhão espontânea,42,1
+96,Bloco de Emoção apático espontânea,43,1
+97,Bloco de Emoção desconfiado espontânea,44,1
+98,Bloco de Emoção seguro espontânea,45,1
+99,Bloco de Emoção humilde espontânea,46,1
+100,Bloco de Emoção determinado espontânea,47,1
+101,Bloco de Emoção orgulhoso (intenso) espontânea,48,1
+102,Bloco de Emoção curioso animado espontânea,49,1
+103,Bloco de Emoção calmo espontânea,50,1
+104,Bloco de motivação,51,0
+105,Bloco de motivação,51,1
