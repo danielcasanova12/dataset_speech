@@ -30,7 +30,7 @@ const getBlockTutorial = (blockId: number, blocks: Block[]) => {
     return {
       title: block.name,
       description: `Assista ao vídeo e responda de forma espontânea, expressando a emoção que você sentiu ao vê-lo.`,
-      instruction: `Espontâneo: Responda com a emoção que sentiu ao ver o vídeo`
+      instruction: `Espontâneo: Leia com a emoção que sentiu ao ver o vídeo`
     };
   } else {
     return {
@@ -185,6 +185,7 @@ const RecordingPage: React.FC = () => {
   const [isUIPaused, setIsUIPaused] = useState(false);
   const [timer, setTimer] = useState(0);
   const [dbfs, setDbfs] = useState(-100);
+  const [totalRecordedTime, setTotalRecordedTime] = useState(0);
 
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
   const [tooltipConfig, setTooltipConfig] = useState<{ open: boolean; text: string; top: number; left: number; arrowTop?: string | number; }>({ open: false, text: '', top: 0, left: 0 });
@@ -637,13 +638,22 @@ const RecordingPage: React.FC = () => {
   const handleNextTutorialStep = useCallback(() => {
     if (tutorialStep === 3) {
       setTutorialStep(null);
-      startPhraseFlow(currentPhraseIndex);
-      setIsUIPaused(false); // Descongela a UI para iniciar a gravação
-      setPreRecordingStep('recording'); // Garante que o estado de gravação seja ativado
+      
+      const currentBlockId = phrases[currentPhraseIndex]?.blockId;
+      if (currentBlockId !== undefined) {
+          const tutorial = getBlockTutorial(currentBlockId, blocks);
+          setBlockTutorialContent(tutorial);
+          setShowBlockTutorialModal(true);
+      } else {
+          startPhraseFlow(currentPhraseIndex);
+          setIsUIPaused(false);
+          setPreRecordingStep('recording');
+      }
+
     } else {
       setTutorialStep(prev => (prev === null ? null : prev + 1));
     }
-  }, [tutorialStep, startPhraseFlow, currentPhraseIndex]);
+  }, [tutorialStep, startPhraseFlow, currentPhraseIndex, phrases, blocks]);
 
   const getAudioDataAndMetadata = (audioBlob: Blob): Promise<{ duration: number; sampleRate: number; buffer: AudioBuffer }> => {
     return new Promise((resolve, reject) => {
@@ -685,6 +695,7 @@ const RecordingPage: React.FC = () => {
       // 1. Matar a gravação anterior brutalmente
       stopRecording(true); 
       resetRecordingState();
+      setIsUIPaused(true); // Manter pausado durante a transição
       
       const nextPhraseIndex = currentPhraseIndex + 1;
       
@@ -747,6 +758,9 @@ const RecordingPage: React.FC = () => {
         room_tone_type,
         !is_room_tone ? phrases[currentPhraseIndex].id.toString() : "1"
       );
+      if (!is_room_tone) {
+        setTotalRecordedTime(prev => prev + duration);
+      }
       setUploadError(null);
       setAudioForRetry(null);
      
@@ -987,6 +1001,10 @@ const RecordingPage: React.FC = () => {
   const progressValue = totalPhrases > 0 ? ((currentPhraseIndex + 1) / totalPhrases) * 100 : 0;
   const currentPhrase = phrases[currentPhraseIndex];
   const formatTime = (time: number) => `${Math.floor(time / 60)}:${(time % 60).toString().padStart(2, '0')}`;
+  const formatTotalTime = (time: number) => {
+    const totalSeconds = Math.round(time);
+    return `${Math.floor(totalSeconds / 60)}:${(totalSeconds % 60).toString().padStart(2, '0')}`;
+  };
   const getDbfsColor = (dbfs: number) => dbfs > -20 ? 'red' : dbfs > -40 ? 'yellow' : 'green';
   
   // Extract unique video URLs for preloading
@@ -1131,7 +1149,10 @@ const RecordingPage: React.FC = () => {
               <Paper elevation={3} sx={{ p: 4 }}>
                 <Box sx={{ width: '100%', mb: 2 }}>
                   <LinearProgress variant="determinate" value={progressValue} />
-                  <Typography variant="body2" color="text.secondary" textAlign="center">{`${currentPhraseIndex + 1} de ${totalPhrases} frases`}</Typography>
+                  <Box display="flex" justifyContent="space-between" mt={1}>
+                    <Typography variant="body2" color="text.secondary">{`${currentPhraseIndex + 1} de ${totalPhrases} frases`}</Typography>
+                    <Typography variant="body2" color="primary" fontWeight="bold">Tempo acumulado: {formatTotalTime(totalRecordedTime)}</Typography>
+                  </Box>
                 </Box>
                 
                 {isVideoPhrase(currentPhraseIndex) ? (
