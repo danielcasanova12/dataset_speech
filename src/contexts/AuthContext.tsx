@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { api, UserRegistrationData } from '../services/api';
+import { useAutoLogout } from '../hooks/useAutoLogout';
 
 interface AuthContextType {
   token: string | null;
@@ -14,56 +15,36 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [token, setToken] = useState<string | null>(localStorage.getItem('access_token'));
+  const [loginTime, setLoginTime] = useState<string | null>(localStorage.getItem('login_time'));
   const [activeSession, setActiveSession] = useState<{id: number, createdAt: string} | null>(null);
 
   useEffect(() => {
     const storedToken = localStorage.getItem('access_token');
+    const storedLoginTime = localStorage.getItem('login_time');
     if (storedToken) {
       setToken(storedToken);
     }
+    if (storedLoginTime) {
+      setLoginTime(storedLoginTime);
+    }
   }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     localStorage.removeItem('access_token');
     localStorage.removeItem('login_time');
     setToken(null);
+    setLoginTime(null);
     setActiveSession(null);
-  };
-
-  useEffect(() => {
-    if (!token) return;
-
-    const interval = setInterval(() => {
-      const loginTimeString = localStorage.getItem('login_time');
-      if (!loginTimeString) return;
-
-      const loginTime = new Date(loginTimeString).getTime();
-      const currentTime = new Date().getTime();
-
-      const fourHoursMs = 4 * 60 * 60 * 1000;
-      const twoHoursMs = 2 * 60 * 60 * 1000;
-
-      if (currentTime - loginTime >= fourHoursMs) {
-        if (!activeSession) {
-          logout();
-        } else {
-          const sessionStartTime = new Date(activeSession.createdAt).getTime();
-          if (currentTime - sessionStartTime >= twoHoursMs) {
-            logout();
-          }
-        }
-      }
-    }, 60000); // Check every minute
-
-    return () => clearInterval(interval);
-  }, [token, activeSession]);
+  }, []);
 
   const login = async (username: string, password: string) => {
     try {
       const response = await api.login(username, password);
+      const newLoginTime = new Date().toISOString();
       localStorage.setItem('access_token', response.access_token);
-      localStorage.setItem('login_time', new Date().toISOString());
+      localStorage.setItem('login_time', newLoginTime);
       setToken(response.access_token);
+      setLoginTime(newLoginTime);
     } catch (error) {
       throw error;
     }
@@ -82,23 +63,38 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setActiveSession({ id, createdAt });
     } else {
       setActiveSession(null);
-
-      // Regra adicional: se a sessão finalizar e o token já tiver +4 horas, logout imediato.
-      const loginTimeString = localStorage.getItem('login_time');
-      if (loginTimeString) {
-         const loginTime = new Date(loginTimeString).getTime();
-         const currentTime = new Date().getTime();
-         if (currentTime - loginTime >= 4 * 60 * 60 * 1000) {
-            logout();
-         }
-      }
+      // Extra logic handled by useAutoLogout since isSessionActive changes to false.
     }
   };
 
   const isAuthenticated = !!token;
 
+  // Utilize our custom hook
+  const { showWarning, timeRemaining } = useAutoLogout({
+    loginTime,
+    isSessionActive: !!activeSession,
+    logout,
+    warningMinutes: 5,
+  });
+
   return (
     <AuthContext.Provider value={{ token, isAuthenticated, login, register, logout, setActiveSessionInfo }}>
+      {showWarning && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          backgroundColor: '#ff9800',
+          color: 'white',
+          textAlign: 'center',
+          padding: '10px',
+          zIndex: 9999,
+          fontWeight: 'bold'
+        }}>
+          ⚠️ Atenção: Sua sessão irá expirar em {timeRemaining ? Math.ceil(timeRemaining / 60000) : 0} minuto(s).
+        </div>
+      )}
       {children}
     </AuthContext.Provider>
   );

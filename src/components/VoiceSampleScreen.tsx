@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button, Typography, Box, Modal, Card, CardContent, Grid, CircularProgress } from '@mui/material';
 
 const modalStyle = {
@@ -34,6 +34,33 @@ const VoiceSampleScreen: React.FC<VoiceSampleScreenProps> = ({
   onSampleRecorded,
   onPlaybackEnded,
 }) => {
+  const RECORDING_LIMIT_SECONDS = 10; // "em 10 segundos ele deve parar a gravação automático"
+  const [timeLeft, setTimeLeft] = useState(RECORDING_LIMIT_SECONDS);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+
+    if (step === 'recording') {
+      setTimeLeft(RECORDING_LIMIT_SECONDS);
+      interval = setInterval(() => {
+        setTimeLeft((prevTime) => {
+          if (prevTime <= 1) {
+            clearInterval(interval);
+            onStopRecording();
+            return 0;
+          }
+          return prevTime - 1;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [step, onStopRecording]);
+
   return (
     <Modal open={true} aria-labelledby="voice-sample-modal-title">
       <Box sx={modalStyle}>
@@ -54,7 +81,9 @@ const VoiceSampleScreen: React.FC<VoiceSampleScreenProps> = ({
           {step === 'recording' && (
             <Box sx={{ textAlign: 'center' }}>
               <CircularProgress />
-              <Typography sx={{ mt: 1 }}>Gravando...</Typography>
+              <Typography sx={{ mt: 2, fontWeight: 'bold', color: 'error.main' }}>
+                Gravando... Parando em {timeLeft}s
+              </Typography>
               <Button variant="contained" color="error" onClick={onStopRecording} sx={{ mt: 2 }}>
                 Parar
               </Button>

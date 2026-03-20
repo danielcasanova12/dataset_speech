@@ -6,8 +6,8 @@ interface RoomToneScreenProps {
 }
 
 const RoomToneScreen: React.FC<RoomToneScreenProps> = ({ onRecordingComplete }) => {
-  const [step, setStep] = useState<'initial' | 'countdown' | 'recording' | 'finished'>('initial');
-  const [countdown, setCountdown] = useState(3);
+  const [step, setStep] = useState<'initial' | 'recording' | 'finished'>('initial');
+  const [countdown, setCountdown] = useState(5);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
@@ -26,6 +26,11 @@ const RoomToneScreen: React.FC<RoomToneScreenProps> = ({ onRecordingComplete }) 
       streamRef.current = null;
     }
   }, [onRecordingComplete]);
+
+  const startRecordingFlow = () => {
+    setCountdown(5);
+    setStep('recording');
+  };
 
   useEffect(() => {
     const handleStartRecording = async () => {
@@ -66,20 +71,16 @@ const RoomToneScreen: React.FC<RoomToneScreenProps> = ({ onRecordingComplete }) 
         stopRecording();
       }
     };
-  }, [step, onRecordingComplete, stopRecording]);
+  }, [step, stopRecording]); // Note: stopRecording was already in the dependency array or used inside, I'll keep it correct.
 
   useEffect(() => {
-    if (step === 'countdown' || step === 'recording') {
+    if (step === 'recording') {
       const timer = setInterval(() => {
         setCountdown((prev) => {
           if (prev > 1) {
             return prev - 1;
           } else {
             clearInterval(timer);
-            if (step === 'countdown') {
-              setStep('recording');
-              setCountdown(5); // Inicia contagem da gravação
-            }
             return 0;
           }
         });
@@ -87,13 +88,6 @@ const RoomToneScreen: React.FC<RoomToneScreenProps> = ({ onRecordingComplete }) 
       return () => clearInterval(timer);
     }
   }, [step]);
-  
-  // O onRecordingComplete é chamado no onStop do mediaRecorder
-  // useEffect(() => {
-  //     if (step === 'finished') {
-  //         onRecordingComplete();
-  //     }
-  // }, [step, onRecordingComplete]);
 
   return (
     <Box
@@ -112,16 +106,9 @@ const RoomToneScreen: React.FC<RoomToneScreenProps> = ({ onRecordingComplete }) 
         </Typography>
 
         {step === 'initial' && (
-          <Button variant="contained" color="primary" onClick={() => setStep('countdown')}>
+          <Button variant="contained" color="primary" onClick={startRecordingFlow}>
             Iniciar
           </Button>
-        )}
-
-        {step === 'countdown' && (
-          <Box>
-            <Typography variant="h2" component="p" sx={{ my: 2 }}>{countdown}</Typography>
-            <Typography variant="h6" sx={{ mt: 2 }}>Prepare-se...</Typography>
-          </Box>
         )}
 
         {step === 'recording' && (
