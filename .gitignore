@@ -31,3 +31,4 @@ API_DOCS.md
 venv
 public/video/
 *.mp4
+*.md

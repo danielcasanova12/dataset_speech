@@ -152,7 +152,7 @@ const RecordingPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { datasetId } = useParams<{ datasetId: string }>();
-  const { token, setActiveSessionInfo } = useAuth();
+  const { setActiveSessionInfo } = useAuth();
   
   const [phrases, setPhrases] = useState<Phrase[]>([]);
   const [blocks, setBlocks] = useState<Block[]>([]);
@@ -434,7 +434,7 @@ const RecordingPage: React.FC = () => {
         return;
       }
       
-      if (!token || !datasetId || sessionCreationLock.current) {
+      if (!datasetId || sessionCreationLock.current) {
         setIsLoading(false);
         return;
       }
@@ -456,7 +456,7 @@ const RecordingPage: React.FC = () => {
       
       let caughtError: any = null;
       try {
-        const newSession = await api.createSession(datasetInfo.backendId, true, token);
+        const newSession = await api.createSession(datasetInfo.backendId, true);
         setSession(newSession);
         setActiveSessionInfo(newSession.id, newSession.started_at);
         setCurrentPhraseIndex(0);
@@ -484,7 +484,7 @@ const RecordingPage: React.FC = () => {
       }
     };
     createOrResumeSession();
-  }, [token, datasetId, navigate, location.state, location.pathname, session, retryCount]);
+  }, [datasetId, navigate, location.state, location.pathname, session, retryCount, setActiveSessionInfo]);
 
   useEffect(() => {
     const fetchBlockData = async () => {
@@ -686,7 +686,7 @@ const RecordingPage: React.FC = () => {
   };
 
   const advanceToNextPhrase = useCallback(async () => {
-    if (!session || !token) return;
+    if (!session) return;
     
     try {
       setIsProcessing(true);
@@ -702,7 +702,7 @@ const RecordingPage: React.FC = () => {
       if (nextPhraseIndex < phrases.length) {
         // Salva no banco (sem await para não travar UI)
         const updatedSession = { ...session, numero_frase: nextPhraseIndex };
-        api.put(`/sessions/${session.id}`, updatedSession, token).catch(e => console.error(e));
+        api.put(`/sessions/${session.id}`, updatedSession).catch(e => console.error(e));
         setSession(updatedSession);
         
         const currentBlockId = phrases[currentPhraseIndex].blockId;
@@ -733,10 +733,10 @@ const RecordingPage: React.FC = () => {
     } finally {
         setIsProcessing(false);
     }
-  }, [session, token, currentPhraseIndex, phrases, stopRecording, resetRecordingState, startPhraseFlow]);
+  }, [session, currentPhraseIndex, phrases, stopRecording, resetRecordingState, startPhraseFlow]);
 
   const sendAudioData = useCallback(async (audioBlob: Blob, is_room_tone = false, blockId?: number, room_tone_type?: 'start' | 'end') => {
-    if (!session || !token) return;
+    if (!session) return;
 
     try {
       setIsProcessing(true);
@@ -751,7 +751,6 @@ const RecordingPage: React.FC = () => {
         duration,
         'wav',
         sampleRate,
-        token,
         is_room_tone,
         !is_room_tone ? phrases[currentPhraseIndex].id : undefined,
         !is_room_tone ? phrases[currentPhraseIndex].text : undefined,
@@ -770,10 +769,10 @@ const RecordingPage: React.FC = () => {
     } finally {
       setIsProcessing(false);
     }
-  }, [session, token, phrases, currentPhraseIndex]);
+  }, [session, phrases, currentPhraseIndex]);
 
   const processPhraseChange = useCallback(async (skip = false) => {
-    if (!session || !token) return;
+    if (!session) return;
 
     setIsUIPaused(true);
     setIsRecording(false);
@@ -795,7 +794,7 @@ const RecordingPage: React.FC = () => {
       setCountdown(3);
     });
 
-  }, [session, token, stopRecording, sendAudioData]);
+  }, [session, stopRecording, sendAudioData]);
   const handleRetryUpload = () => {
     if (audioForRetry) {
       sendAudioData(audioForRetry);
@@ -933,11 +932,11 @@ const RecordingPage: React.FC = () => {
   }, [existingSessionInfo, navigate]);
 
   const handleCancelAndCreateNewSession = useCallback(async () => {
-    if (existingSessionInfo && token && datasetId) {
+    if (existingSessionInfo && datasetId) {
       try {
         setIsLoading(true);
         const finished_at = new Date().toISOString();
-        await api.put(`/sessions/${existingSessionInfo.id}`, { ...existingSessionInfo, status: "cancelled", finished_at }, token);
+        await api.put(`/sessions/${existingSessionInfo.id}`, { ...existingSessionInfo, status: "cancelled", finished_at });
         
         setShowExistingSessionModal(false);
         setExistingSessionInfo(null);
@@ -950,7 +949,7 @@ const RecordingPage: React.FC = () => {
           return;
         }
 
-        const newSession = await api.createSession(datasetInfo.backendId, true, token);
+        const newSession = await api.createSession(datasetInfo.backendId, true);
         setSession(newSession);
         setActiveSessionInfo(newSession.id, newSession.started_at);
         setCurrentPhraseIndex(0);
@@ -962,12 +961,12 @@ const RecordingPage: React.FC = () => {
         setIsLoading(false);
       }
     }
-  }, [existingSessionInfo, token, datasetId, setIsLoading, setError, setExistingSessionInfo, setSession, setCurrentPhraseIndex, setPreRecordingStep, setShowExistingSessionModal]);
+  }, [existingSessionInfo, datasetId, setIsLoading, setError, setExistingSessionInfo, setSession, setCurrentPhraseIndex, setPreRecordingStep, setShowExistingSessionModal, setActiveSessionInfo]);
 
   const confirmCancelSession = async () => {
-    if (session && token) {
+    if (session) {
       try {
-        await api.put(`/sessions/${session.id}`, { ...session, status: "cancelled", finished_at: new Date().toISOString() }, token);
+        await api.put(`/sessions/${session.id}`, { ...session, status: "cancelled", finished_at: new Date().toISOString() });
         setActiveSessionInfo(null, null);
         navigate('/');
       } catch (error) {
@@ -979,14 +978,14 @@ const RecordingPage: React.FC = () => {
   };
   
   const handleFinish = async () => {
-    if (session && token) {
+    if (session) {
       try {
         await api.put(`/sessions/${session.id}`, { 
           ...session, 
           status: "finished", 
           notes: sessionNotes,
           finished_at: new Date().toISOString() 
-        }, token);
+        });
         setActiveSessionInfo(null, null);
         setFinalizationStep('idle');
         setOpenFinishModal(true);

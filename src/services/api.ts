@@ -1,21 +1,30 @@
-export const API_BASE_URL = 'https://akcitapi.ddns.net';
-// export const API_BASE_URL = 'http://127.0.0.1';
-export interface CidadeEstado {
-  cidade?: string;
-  estado?: string;
-}
+export const API_BASE_URL = process.env.REACT_APP_API_URL;
 
-export interface HistoricoMoradia {
-  periodo: string;
-  endereco: CidadeEstado;
-}
+// Gerenciador interno de token (Memória - mais seguro que localStorage)
+let memoryToken: string | null = null;
 
-export interface Familiar {
-  nome: string;
-  grau_parentesco: string;
-  endereco: CidadeEstado;
-}
+export const setApiToken = (token: string | null) => {
+  memoryToken = token;
+};
 
+const getHeaders = (contentType: string | null = 'application/json') => {
+  const headers: HeadersInit = {};
+  if (contentType) {
+    headers['Content-Type'] = contentType;
+  }
+  if (memoryToken) {
+    headers['Authorization'] = `Bearer ${memoryToken}`;
+  }
+  return headers;
+};
+
+// Wrapper para fetch para centralizar segurança e credenciais
+const secureFetch = async (url: string, options: RequestInit = {}) => {
+  const response = await fetch(url, {
+    ...options,
+  });
+  return response;
+};
 
 export interface UserRegistrationData {
   email: string;
@@ -24,10 +33,10 @@ export interface UserRegistrationData {
   data_nascimento: string;
   genero: string;
   language: string;
-  cidade_nascimento: CidadeEstado;
-  cidade_atual: CidadeEstado;
-  historico_moradia: HistoricoMoradia[];
-  familiares: Familiar[];
+  cidade_nascimento: { cidade?: string; estado?: string };
+  cidade_atual: { cidade?: string; estado?: string };
+  historico_moradia: any[];
+  familiares: any[];
 }
 
 export interface LoginResponse {
@@ -39,32 +48,11 @@ export interface SessionResponse {
   id: number;
   user_id: string;
   dataset_id: number;
-  started_at: string; // ou Date, se você for converter
-  finished_at: string | null; // ou Date | null
+  started_at: string;
+  finished_at: string | null;
   notes: string | null;
-  vocal_health_note: string | null;
-  termos: boolean;
   status: 'active' | 'cancelled' | 'finished';
   numero_frase: number;
-}
-
-export interface RecordingResponse {
-  id_recordings: number;
-  session_id: number;
-  dataset_id: number;
-  bloco_id: number;
-  frase_id: number;
-  path_local: string;
-  audio_url_drive: string | null;
-  audio_url_s3: string | null;
-  is_test: boolean;
-  duration: number;
-  format: string;
-  sample_rate: number;
-  frase_content: string | null;
-  room_tone_start: number | null;
-  room_tone_end: number | null;
-  created_at: string;
 }
 
 export const api = {
@@ -73,11 +61,9 @@ export const api = {
     formData.append('username', username);
     formData.append('password', password);
 
-    const response = await fetch(`${API_BASE_URL}/auth/jwt/login`, {
+    const response = await secureFetch(`${API_BASE_URL}/auth/jwt/login`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: formData,
     });
 
@@ -86,90 +72,57 @@ export const api = {
         throw new Error(errorData.detail || 'Login failed');
     }
 
-    return response.json();
+    const data = await response.json();
+    setApiToken(data.access_token); // Armazena na memória
+    return data;
   },
 
   register: async (data: UserRegistrationData): Promise<void> => {
-    const response = await fetch(`${API_BASE_URL}/auth/register`, {
+    const response = await secureFetch(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: getHeaders(),
       body: JSON.stringify(data),
     });
 
     if (!response.ok) {
         const errorData = await response.json();
-        // Handle validation errors or other issues
         throw new Error(JSON.stringify(errorData) || 'Registration failed');
     }
   },
 
-  createSession: async (dataset_id: number, termos: boolean, token: string): Promise<SessionResponse> => {
-    const response = await fetch(`${API_BASE_URL}/api/v1/sessions`, {
+  createSession: async (dataset_id: number, termos: boolean): Promise<SessionResponse> => {
+    const response = await secureFetch(`${API_BASE_URL}/api/v1/sessions`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
+      headers: getHeaders(),
       body: JSON.stringify({ dataset_id, termos }),
     });
 
     if (!response.ok) {
         const errorData = await response.json();
-        // Se uma sessão ativa já existe, o backend retorna 409 com os detalhes
-        if (response.status === 409 && errorData.detail && errorData.detail.session) {
-            // Lança um erro customizado que a UI pode capturar
+        if (response.status === 409 && errorData.detail?.session) {
             const error = new Error(errorData.detail.message) as any;
-            error.session = errorData.detail.session; // Anexa a sessão existente ao erro
+            error.session = errorData.detail.session;
             throw error;
         }
         throw new Error(errorData.detail || 'Failed to create session');
     }
-
     return response.json();
   },
 
-  getSession: async (id: string, token: string): Promise<SessionResponse> => {
-    const response = await fetch(`${API_BASE_URL}/api/v1/sessions/${id}`, {
+  // Simplificado: Todas as funções agora usam getHeaders() interno
+  getSession: async (id: string): Promise<SessionResponse> => {
+    const response = await secureFetch(`${API_BASE_URL}/api/v1/sessions/${id}`, {
       method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
+      headers: getHeaders(),
     });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || 'Failed to fetch session');
-    }
-
-    return response.json();
-  },
-
-  getRecording: async (id: number, token: string): Promise<RecordingResponse> => {
-    const response = await fetch(`${API_BASE_URL}/api/v1/recordings/${id}` , {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || 'Failed to fetch recording');
-    }
-
+    if (!response.ok) throw new Error('Failed to fetch session');
     return response.json();
   },
 
   forgotPassword: async (email: string): Promise<void> => {
-    const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+    const response = await secureFetch(`${API_BASE_URL}/auth/forgot-password`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: getHeaders(),
       body: JSON.stringify({ email }),
     });
 
@@ -179,11 +132,9 @@ export const api = {
   },
 
   resetPassword: async (token: string, password: string): Promise<void> => {
-    const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+    const response = await secureFetch(`${API_BASE_URL}/auth/reset-password`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: getHeaders(),
       body: JSON.stringify({ token, password }),
     });
 
@@ -192,39 +143,13 @@ export const api = {
     }
   },
 
-  patch: async (path: string, data: any, token: string): Promise<any> => {
-    const response = await fetch(`${API_BASE_URL}/api/v1${path}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify(data),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || `Failed to patch ${path}`);
-    }
-
-    return response.json();
-  },
-
-  put: async (path: string, data: any, token: string): Promise<any> => {
-    const response = await fetch(`${API_BASE_URL}/api/v1${path}`, {
+  put: async (path: string, data: any): Promise<any> => {
+    const response = await secureFetch(`${API_BASE_URL}/api/v1${path}`, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
+      headers: getHeaders(),
       body: JSON.stringify(data),
     });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || `Failed to PUT ${path}`);
-    }
-
+    if (!response.ok) throw new Error(`Failed to PUT ${path}`);
     return response.json();
   },
 
@@ -236,7 +161,6 @@ export const api = {
     duration: number,
     format: string,
     sampleRate: number,
-    token: string,
     is_room_tone: boolean,
     phraseId?: number,
     frase_content?: string,
@@ -257,19 +181,12 @@ export const api = {
     formData.append('room_tone_end', room_tone_type === 'end' ? '1' : '0');
     formData.append('is_room_tone', String(is_room_tone));
 
-    if (phraseId) {
-      formData.append('frase_id', phraseId.toString());
-    }
-    if (frase_content) {
-      formData.append('frase_content', frase_content);
-    }
+    if (phraseId) formData.append('frase_id', phraseId.toString());
+    if (frase_content) formData.append('frase_content', frase_content);
 
-
-    const response = await fetch(`${API_BASE_URL}/api/v1/recordings`, {
+    const response = await secureFetch(`${API_BASE_URL}/api/v1/recordings`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
+      headers: getHeaders(null), // null para deixar o browser definir boundary do FormData
       body: formData,
     });
 
@@ -277,8 +194,6 @@ export const api = {
       const errorData = await response.json();
       throw new Error(JSON.stringify(errorData.detail) || 'Failed to upload recording');
     }
-
     return response.json();
   },
 };
-// Force re-evaluation

@@ -1,9 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { api, UserRegistrationData } from '../services/api';
+import { api, UserRegistrationData, setApiToken } from '../services/api';
 import { useAutoLogout } from '../hooks/useAutoLogout';
 
 interface AuthContextType {
-  token: string | null;
   isAuthenticated: boolean;
   login: (username: string, password: string) => Promise<void>;
   register: (data: UserRegistrationData) => Promise<void>;
@@ -14,15 +13,18 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [token, setToken] = useState<string | null>(localStorage.getItem('access_token'));
+  // O token agora é gerenciado internamente pela API e pelo estado de autenticação
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!sessionStorage.getItem('is_auth'));
   const [loginTime, setLoginTime] = useState<string | null>(localStorage.getItem('login_time'));
   const [activeSession, setActiveSession] = useState<{id: number, createdAt: string} | null>(null);
 
   useEffect(() => {
-    const storedToken = localStorage.getItem('access_token');
+    const storedToken = sessionStorage.getItem('access_token');
     const storedLoginTime = localStorage.getItem('login_time');
+    
     if (storedToken) {
-      setToken(storedToken);
+      setApiToken(storedToken);
+      setIsAuthenticated(true);
     }
     if (storedLoginTime) {
       setLoginTime(storedLoginTime);
@@ -30,9 +32,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const logout = useCallback(() => {
-    localStorage.removeItem('access_token');
+    sessionStorage.removeItem('access_token');
+    sessionStorage.removeItem('is_auth');
     localStorage.removeItem('login_time');
-    setToken(null);
+    setApiToken(null);
+    setIsAuthenticated(false);
     setLoginTime(null);
     setActiveSession(null);
   }, []);
@@ -41,9 +45,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const response = await api.login(username, password);
       const newLoginTime = new Date().toISOString();
-      localStorage.setItem('access_token', response.access_token);
+      
+      // Armazenamos no sessionStorage (morre ao fechar a aba) e na memória da API
+      sessionStorage.setItem('access_token', response.access_token);
+      sessionStorage.setItem('is_auth', 'true');
       localStorage.setItem('login_time', newLoginTime);
-      setToken(response.access_token);
+      
+      setApiToken(response.access_token);
+      setIsAuthenticated(true);
       setLoginTime(newLoginTime);
     } catch (error) {
       throw error;
@@ -63,13 +72,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setActiveSession({ id, createdAt });
     } else {
       setActiveSession(null);
-      // Extra logic handled by useAutoLogout since isSessionActive changes to false.
     }
   };
 
-  const isAuthenticated = !!token;
-
-  // Utilize our custom hook
   const { showWarning, timeRemaining } = useAutoLogout({
     loginTime,
     isSessionActive: !!activeSession,
@@ -78,7 +83,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   });
 
   return (
-    <AuthContext.Provider value={{ token, isAuthenticated, login, register, logout, setActiveSessionInfo }}>
+    <AuthContext.Provider value={{ isAuthenticated, login, register, logout, setActiveSessionInfo }}>
       {showWarning && (
         <div style={{
           position: 'fixed',
