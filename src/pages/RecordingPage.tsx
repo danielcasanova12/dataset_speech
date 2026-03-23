@@ -672,10 +672,16 @@ const RecordingPage: React.FC = () => {
       
       const currentBlockId = phrases[currentPhraseIndex]?.blockId;
       if (currentBlockId !== undefined) {
-          const tutorial = getBlockTutorial(currentBlockId, blocks);
-          setBlockTutorialContent(tutorial);
-          setIsTutorialAudioFinished(false);
-          setShowBlockTutorialModal(true);
+          if (isVideoPhrase(currentPhraseIndex)) {
+              startPhraseFlow(currentPhraseIndex);
+              setIsUIPaused(false);
+              setPreRecordingStep('recording');
+          } else {
+              const tutorial = getBlockTutorial(currentBlockId, blocks);
+              setBlockTutorialContent(tutorial);
+              setIsTutorialAudioFinished(false);
+              setShowBlockTutorialModal(true);
+          }
       } else {
           startPhraseFlow(currentPhraseIndex);
           setIsUIPaused(false);
@@ -685,7 +691,7 @@ const RecordingPage: React.FC = () => {
     } else {
       setTutorialStep(prev => (prev === null ? null : prev + 1));
     }
-  }, [tutorialStep, startPhraseFlow, currentPhraseIndex, phrases, blocks]);
+  }, [tutorialStep, startPhraseFlow, currentPhraseIndex, phrases, blocks, isVideoPhrase]);
 
   const getAudioDataAndMetadata = (audioBlob: Blob): Promise<{ duration: number; sampleRate: number; buffer: AudioBuffer }> => {
     return new Promise((resolve, reject) => {
@@ -739,22 +745,27 @@ const RecordingPage: React.FC = () => {
         
         const currentBlockId = phrases[currentPhraseIndex].blockId;
         const nextBlockId = phrases[nextPhraseIndex].blockId;
+        const isCurrentVideo = isVideoPhrase(currentPhraseIndex);
+        const isNextVideo = isVideoPhrase(nextPhraseIndex);
         
         setCurrentPhraseIndex(nextPhraseIndex);
 
-        if (currentBlockId === nextBlockId) {
-          // 2. Mesma bloco: espera o hardware limpar e inicia
-          setTimeout(() => {
-              setIsUIPaused(false);
-              startPhraseFlow(nextPhraseIndex);
-          }, 800); 
-        } else {
-           // 3. Mudança de bloco: Configura tutorial e NÃO inicia gravação
+        const isBlockChange = currentBlockId !== nextBlockId;
+        const shouldShowTutorial = (isBlockChange && !isNextVideo) || (isCurrentVideo && !isNextVideo && !isBlockChange);
+
+        if (shouldShowTutorial) {
+           // Mudança de bloco (ou transição de vídeo): Configura tutorial e NÃO inicia gravação
            const tutorial = getBlockTutorial(nextBlockId, blocks);
            setBlockTutorialContent(tutorial);
            setIsTutorialAudioFinished(false);
            setShowBlockTutorialModal(true);
            // Gravação será iniciada no fechamento do modal
+        } else {
+          // Mesma bloco ou próximo é vídeo: espera o hardware limpar e inicia
+          setTimeout(() => {
+              setIsUIPaused(false);
+              startPhraseFlow(nextPhraseIndex);
+          }, 800); 
         }
       } else {
         stopRecording(true);
