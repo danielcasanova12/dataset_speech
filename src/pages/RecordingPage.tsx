@@ -19,8 +19,8 @@ const getBlockTutorial = (blockId: number, blocks: Block[]) => {
   if (!block) return { title: `Bloco ${blockId}`, description: "Nova seção." };
 
   if (blockId === 1) return { title: block.name, description: "Bloco de ruído" };
-  if (blockId === 2) return { title: block.name, description: "Nesta seção, leia as frases que aparecem na tela de forma clara e natural, como se estivesse conversando normalmente.", instruction: "Leia naturalmente" };
-  if (blockId === 3) return { title: block.name, description: "Aqui você responderá perguntas de forma espontânea. Leia a pergunta na tela e responda naturalmente, como faria em uma conversa.", instruction: "Responda de forma espontânea e natural" };
+  if (blockId === 2) return { title: block.name, description: "Nesta seção, leia as frases que aparecem na tela de forma clara e natural, como se estivesse conversando normalmente.", instruction: "Leia naturalmente", audioUrl: "/audios/bloco_02_leitura.wav" };
+  if (blockId === 3) return { title: block.name, description: "Aqui você responderá perguntas de forma espontânea. Leia a pergunta na tela e responda naturalmente, como faria em uma conversa.", instruction: "Responda de forma espontânea e natural", audioUrl: "/audios/bloco_espontaneo.wav" };
   if (blockId === 104 || blockId === 105) return { title: block.name, description: "Leia ou responda focado em motivação.", instruction: "Motivação" };
   
   let emotionName = block.name.replace("Bloco de Emoção", "").replace("espontânea", "").trim();
@@ -28,15 +28,17 @@ const getBlockTutorial = (blockId: number, blocks: Block[]) => {
 
   if (block.isSpontaneous) {
     return {
-      title: block.name,
+      title: "Bloco de Emoção espontânea",
       description: `Assista ao vídeo e responda de forma espontânea, expressando a emoção que você sentiu ao vê-lo.`,
-      instruction: `Espontâneo: Leia com a emoção que sentiu ao ver o vídeo`
+      instruction: `Espontâneo`,
+      audioUrl: "/audios/bloco_espontaneo.wav"
     };
   } else {
     return {
       title: block.name,
       description: `Leia as frases expressando ${emotionName}.`,
-      instruction: `Expressar Emoção: ${emotionName}`
+      instruction: `Expressar Emoção: ${emotionName}`,
+      audioUrl: (emotionName.toLowerCase().includes("feliz") || blockId === 5) ? "/audios/bloco_05_feliz.wav" : undefined
     };
   }
 };
@@ -191,7 +193,10 @@ const RecordingPage: React.FC = () => {
   const [tooltipConfig, setTooltipConfig] = useState<{ open: boolean; text: string; top: number; left: number; arrowTop?: string | number; }>({ open: false, text: '', top: 0, left: 0 });
   const isTutorialActive = tutorialStep !== null;
   const [showBlockTutorialModal, setShowBlockTutorialModal] = useState(false);
-  const [blockTutorialContent, setBlockTutorialContent] = useState({ title: '', description: '' });
+  const [blockTutorialContent, setBlockTutorialContent] = useState<{ title: string; description: string; audioUrl?: string }>({ title: '', description: '' });
+  const [isTutorialAudioFinished, setIsTutorialAudioFinished] = useState(false);
+  const [isTutorialAudioMuted, setIsTutorialAudioMuted] = useState(false);
+  const tutorialAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const [videoFinished, setVideoFinished] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -650,6 +655,10 @@ const RecordingPage: React.FC = () => {
   }, [tutorialStep, isTutorialActive]);
 
   const handleTutorialModalClose = () => {
+    if (tutorialAudioRef.current) {
+      tutorialAudioRef.current.pause();
+      tutorialAudioRef.current.currentTime = 0;
+    }
     setShowBlockTutorialModal(false);
     setIsUIPaused(false);
     setTimeout(() => {
@@ -665,6 +674,7 @@ const RecordingPage: React.FC = () => {
       if (currentBlockId !== undefined) {
           const tutorial = getBlockTutorial(currentBlockId, blocks);
           setBlockTutorialContent(tutorial);
+          setIsTutorialAudioFinished(false);
           setShowBlockTutorialModal(true);
       } else {
           startPhraseFlow(currentPhraseIndex);
@@ -742,6 +752,7 @@ const RecordingPage: React.FC = () => {
            // 3. Mudança de bloco: Configura tutorial e NÃO inicia gravação
            const tutorial = getBlockTutorial(nextBlockId, blocks);
            setBlockTutorialContent(tutorial);
+           setIsTutorialAudioFinished(false);
            setShowBlockTutorialModal(true);
            // Gravação será iniciada no fechamento do modal
         }
@@ -1301,8 +1312,28 @@ const RecordingPage: React.FC = () => {
         <Box sx={modalStyle}>
           <Typography variant="h6">{blockTutorialContent.title}</Typography>
           <Typography sx={{ mt: 2 }}>{blockTutorialContent.description}</Typography>
+          {blockTutorialContent.audioUrl && (
+            <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Button onClick={() => setIsTutorialAudioMuted(!isTutorialAudioMuted)} variant="outlined" size="small">
+                {isTutorialAudioMuted ? 'Desmutar Áudio' : 'Mutar Áudio'}
+              </Button>
+              <audio
+                ref={tutorialAudioRef}
+                autoPlay
+                muted={isTutorialAudioMuted}
+                src={blockTutorialContent.audioUrl}
+                onEnded={() => setIsTutorialAudioFinished(true)}
+                onError={() => setIsTutorialAudioFinished(true)}
+                style={{ display: 'none' }}
+              />
+            </Box>
+          )}
           <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
-            <Button onClick={handleTutorialModalClose} variant="contained">
+            <Button 
+              onClick={handleTutorialModalClose} 
+              variant="contained"
+              disabled={!!blockTutorialContent.audioUrl && !isTutorialAudioFinished}
+            >
               Entendi
             </Button>
           </Box>
