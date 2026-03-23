@@ -171,8 +171,8 @@ const RecordingPage: React.FC = () => {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [showNoPhrasesModal, setShowNoPhrasesModal] = useState(false);
   const [showTimeoutModal, setShowTimeoutModal] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
-  const MAX_RETRIES = 3;
+  const retryCountRef = useRef(0);
+  const MAX_RETRIES = 1;
   const [uploadError, setUploadError] = useState<Error | null>(null);
   const [audioForRetry, setAudioForRetry] = useState<Blob | null>(null);
 
@@ -439,7 +439,7 @@ const RecordingPage: React.FC = () => {
         return;
       }
 
-      if (retryCount === 0) {
+      if (retryCountRef.current === 0) {
         setError(null); // Clear previous errors on a new attempt
       }
       
@@ -461,30 +461,31 @@ const RecordingPage: React.FC = () => {
         setActiveSessionInfo(newSession.id, newSession.started_at);
         setCurrentPhraseIndex(0);
         setPreRecordingStep('voiceCheck');
-        setRetryCount(0); // Reset retry count on success
+        retryCountRef.current = 0; // Reset retry count on success
       } catch (error: any) {
         caughtError = error;
         if (error.session) {
           setExistingSessionInfo(error.session as SessionResponse);
           setShowExistingSessionModal(true);
-          setRetryCount(0); // Reset retry count for existing session case
-        } else if (retryCount < MAX_RETRIES) {
-          console.warn(`Session creation failed, retrying (${retryCount + 1}/${MAX_RETRIES})...`, error);
-          setRetryCount(prev => prev + 1);
-          setTimeout(() => createOrResumeSession(), 1000); // Retry after 1 second
+          retryCountRef.current = 0; // Reset retry count for existing session case
+        } else if (retryCountRef.current < MAX_RETRIES) {
+          console.warn(`Session creation failed, retrying (${retryCountRef.current + 1}/${MAX_RETRIES})...`, error);
+          retryCountRef.current += 1;
+          const backoffTime = Math.pow(2, retryCountRef.current) * 1000; // Exponential backoff
+          setTimeout(() => createOrResumeSession(), backoffTime); 
         } else {
           console.error("Failed to create session after multiple retries:", error);
           setError("Não foi possível iniciar a sessão após várias tentativas. Por favor, tente novamente mais tarde.");
         }
       } finally {
-        if (retryCount >= MAX_RETRIES || caughtError?.session) { // Only stop loading if retries exhausted or session exists
+        if (retryCountRef.current >= MAX_RETRIES || caughtError?.session) { // Only stop loading if retries exhausted or session exists
           setIsLoading(false); 
         }
         sessionCreationLock.current = false;
       }
     };
     createOrResumeSession();
-  }, [datasetId, navigate, location.state, location.pathname, session, retryCount, setActiveSessionInfo]);
+  }, [datasetId, navigate, location.state, location.pathname, session, setActiveSessionInfo]);
 
   useEffect(() => {
     const fetchBlockData = async () => {
@@ -526,14 +527,35 @@ const RecordingPage: React.FC = () => {
         const lines = text.trim().split('\n').slice(1);
         const normalizeMediaPath = (path?: string) => {
           if (!path) return "";
+          
+          // 1. Limpeza básica e normalização de barras
           let normalized = path.replace(/\\/g, "/").trim();
 
-          const index = normalized.toLowerCase().indexOf('/video/');
-          if (index !== -1) {
-              normalized = normalized.substring(index);
-          } else if (!normalized.startsWith("/")) {
-              normalized = "/" + normalized;
+          // 2. SEGURANÇA: Bloquear URLs absolutas (http, https, //) para evitar SSRF/Tracking
+          if (/^(https?:)?\/\//i.test(normalized)) {
+            console.warn("Segurança: Tentativa de carregar vídeo externo bloqueada:", normalized);
+            return "";
           }
+
+          // 3. SEGURANÇA: Bloquear Path Traversal (tentativa de subir pastas com ../)
+          if (normalized.includes("..")) {
+            console.warn("Segurança: Tentativa de Path Traversal detectada:", normalized);
+            return "";
+          }
+
+          // 4. Garantir que o caminho comece com /video/
+          const videoFolderIndex = normalized.toLowerCase().indexOf('/video/');
+          if (videoFolderIndex !== -1) {
+              normalized = normalized.substring(videoFolderIndex);
+          } else {
+              // Se não tiver /video/, mas for um nome de arquivo, assume que está na pasta de vídeos
+              if (!normalized.startsWith("/")) {
+                  normalized = "/video/" + normalized;
+              } else if (!normalized.startsWith("/video/")) {
+                  normalized = "/video" + normalized;
+              }
+          }
+          
           return normalized;
         };
 

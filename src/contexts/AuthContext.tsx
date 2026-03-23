@@ -67,13 +67,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const setActiveSessionInfo = (id: number | null, createdAt: string | null) => {
+  const setActiveSessionInfo = useCallback((id: number | null, createdAt: string | null) => {
     if (id !== null && createdAt !== null) {
       setActiveSession({ id, createdAt });
     } else {
       setActiveSession(null);
     }
-  };
+  }, []);
 
   const { showWarning, timeRemaining } = useAutoLogout({
     loginTime,
