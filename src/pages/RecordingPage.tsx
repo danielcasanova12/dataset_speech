@@ -772,11 +772,11 @@ const RecordingPage: React.FC = () => {
           setShowBlockTutorialModal(true);
           // Gravação será iniciada no fechamento do modal
         } else {
-          // Mesma bloco ou próximo é vídeo: espera o hardware limpar e inicia
+          // Mesma bloco ou próximo é vídeo: inicia quase imediatamente (já houve contagem)
           setTimeout(() => {
               setIsUIPaused(false);
               startPhraseFlow(nextPhraseIndex);
-          }, 800); 
+          }, 500); 
         }
       } else {
         stopRecording(true);
