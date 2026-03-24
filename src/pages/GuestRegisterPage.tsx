@@ -222,7 +222,10 @@ const GuestRegisterPage: React.FC = () => {
                 <Grid container spacing={2}>
                   <Grid item xs={12}>
                     <Paper sx={{ p: 2, border: '1px solid #ddd' }}>
-                        <Typography variant="subtitle1" gutterBottom>Cidade de Nascimento</Typography>
+                        <Typography variant="subtitle1" fontWeight="bold">Cidade de Nascimento</Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            Informe aqui o estado e a cidade onde você nasceu. Essa informação é fundamental para identificarmos a origem do seu sotaque.
+                        </Typography>
                         <Grid container spacing={2}>
                             <Grid item xs={12} sm={6}>
                                 <FormControl fullWidth>
@@ -258,7 +261,10 @@ const GuestRegisterPage: React.FC = () => {
                   </Grid>
                   <Grid item xs={12}>
                     <Paper sx={{ p: 2, border: '1px solid #ddd' }}>
-                        <Typography variant="subtitle1" gutterBottom>Cidade Atual</Typography>
+                        <Typography variant="subtitle1" fontWeight="bold">Cidade Atual</Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            Informe o local onde você reside atualmente.
+                        </Typography>
                         <Grid container spacing={2}>
                             <Grid item xs={12} sm={6}>
                                 <FormControl fullWidth>
@@ -294,18 +300,23 @@ const GuestRegisterPage: React.FC = () => {
                   </Grid>
                 </Grid>
 
-                <Box display="flex" justifyContent="space-between" alignItems="center" mt={4} mb={2}>
-                    <Typography variant="h6">Histórico de Moradia</Typography>
-                    <Button startIcon={<AddCircleOutlineIcon />} onClick={addHistorico}>Adicionar</Button>
+                <Box display="flex" flexDirection="column" mt={4} mb={2}>
+                    <Box display="flex" justifyContent="space-between" alignItems="center">
+                        <Typography variant="h6">Histórico de Moradia</Typography>
+                        <Button startIcon={<AddCircleOutlineIcon />} onClick={addHistorico} variant="outlined" size="small">Adicionar Local</Button>
+                    </Box>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 1 }}>
+                        Por favor, adicione os locais onde você já morou e informe por quanto tempo residiu em cada um. Isso nos ajuda a entender melhor a formação do seu sotaque.
+                    </Typography>
                 </Box>
                 {formData.historico_moradia.map((item, index) => {
-                  const periodos = ["0-5 anos", "6-10 anos", "11-15 anos", "16-20 anos", "21-25 anos", "26-30 anos", "31-35 anos", "36-40 anos", "41-45 anos", "46-50 anos", "51-55 anos", "56-60 anos", "61-65 anos", "66-70 anos", "71-75 anos", "76-80 anos", "81-85 anos", "86-90 anos", "91-95 anos", "96-100 anos", "Mais de 100 anos"];
+                  const periodos = ["Menos de 1 ano", ...Array.from({ length: 100 }, (_, i) => `${i + 1} ano${i === 0 ? '' : 's'}`), "Mais de 100 anos"];
                   return (
                     <Box key={index} sx={{ mb: 2, p: 2, border: '1px solid #444', borderRadius: 1 }}>
                       <Grid container spacing={2} alignItems="center">
                           <Grid item xs={12} sm={4}>
                               <FormControl fullWidth>
-                                  <InputLabel>Período</InputLabel>
+                                  <InputLabel>Tempo de residência</InputLabel>
                                   <Select
                                       value={item.periodo}
                                       onChange={(e) => handleHistoricoChange(index, 'periodo', e.target.value)}

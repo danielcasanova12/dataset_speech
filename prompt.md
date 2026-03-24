@@ -1,3 +1,13 @@
-Fixar o botão de mutar o guia/ a narração
+Histórico de Moradia
+66-70 anos
 
-Busque um icone bem bonito de um fone mutado e um desmutado para colocar na direita de quando esta tendo a gravação para mutar e desmutar a gravação quanod estiver mutado deixe o icone vermelho por favor e no tutorial aparece em baixo do texto um texto vermelho dizendo que o audio do narador esta mutado, clique aqui para desmutar algo assim 
+deixe mais granular a quantidade de anos aqui por favor e melhore para explicar que é para ele falar os local que ele morou 
+
+Estado
+
+Cidade
+
+
+http://localhost:3000/register e no /guest-register
+
+preciso melhorar a forma de apresentar isso 

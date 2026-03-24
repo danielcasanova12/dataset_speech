@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { CssBaseline } from '@mui/material';
 import HomePage from './pages/HomePage';
@@ -11,9 +11,16 @@ import ResetPasswordPage from './pages/ResetPasswordPage';
 import PrivateRoute from './components/PrivateRoute';
 import { AuthProvider } from './contexts/AuthContext';
 import { CustomThemeProvider } from './contexts/ThemeContext';
+import { api } from './services/api';
 
 function App() {
   const location = useLocation();
+
+  useEffect(() => {
+    // Tenta conectar com a API logo que o site abre (Heartbeat)
+    api.heartbeat();
+  }, []);
+
   return (
     <CustomThemeProvider>
       <CssBaseline />

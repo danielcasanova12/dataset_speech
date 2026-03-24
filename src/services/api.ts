@@ -196,4 +196,12 @@ export const api = {
     }
     return response.json();
   },
+
+  heartbeat: async (): Promise<void> => {
+    try {
+      await fetch(`${API_BASE_URL}/`, { method: 'GET' });
+    } catch (e) {
+      console.warn('API Heartbeat failed:', e);
+    }
+  },
 };
