@@ -6,9 +6,11 @@ import { useTheme } from '../contexts/ThemeContext';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
 import { DATASETS } from '../datasets';
+import MicTester from '../components/MicTester';
 
 const HomePage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
+  const [hasMic, setHasMic] = useState(true); // Default to true until checked
   const { isAuthenticated, logout } = useAuth();
   const { mode, toggleTheme } = useTheme();
   
@@ -41,6 +43,7 @@ const HomePage: React.FC = () => {
 
         {isAuthenticated ? (
             <>
+                <MicTester onMicStatusChange={setHasMic} />
                 <Typography variant="h5" component="h2" sx={{ mb: 4 }}>
                 Selecione o Dataset
                 </Typography>
@@ -53,9 +56,10 @@ const HomePage: React.FC = () => {
                         <Button
                         variant="contained"
                         color="primary"
-                        component={Link}
-                        to={`/recording/${dataset.frontendId}`}
+                        component={hasMic ? Link : "button"}
+                        to={hasMic ? `/recording/${dataset.frontendId}` : undefined}
                         size="large"
+                        disabled={!hasMic}
                         >
                         {dataset.name}
                         </Button>

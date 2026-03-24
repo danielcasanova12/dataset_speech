@@ -35,7 +35,9 @@ const RoomToneScreen: React.FC<RoomToneScreenProps> = ({ onRecordingComplete }) 
   useEffect(() => {
     const handleStartRecording = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const savedMicId = localStorage.getItem('selectedMicId');
+        const audioConstraints = savedMicId ? { deviceId: { exact: savedMicId } } : true;
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
         streamRef.current = stream;
         mediaRecorderRef.current = new MediaRecorder(stream);
         

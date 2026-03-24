@@ -348,10 +348,11 @@ const RecordingPage: React.FC = () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
-      
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
 
+      const savedMicId = localStorage.getItem('selectedMicId');
+      const audioConstraints = savedMicId ? { deviceId: { exact: savedMicId } } : true;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+      streamRef.current = stream;
       // Audio Context Singleton
       if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -1060,7 +1061,9 @@ const RecordingPage: React.FC = () => {
 
   const handleStartSampleRecording = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const savedMicId = localStorage.getItem('selectedMicId');
+      const audioConstraints = savedMicId ? { deviceId: { exact: savedMicId } } : true;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
       mediaRecorderSampleRef.current = new MediaRecorder(stream);
       
       mediaRecorderSampleRef.current.ondataavailable = (event) => {

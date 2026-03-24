@@ -28,9 +28,20 @@ interface ConsentScreenProps {
 
 const ConsentScreen: React.FC<ConsentScreenProps> = ({ onAccept, onDecline }) => {
   const [isChecked, setIsChecked] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const handleAccept = () => {
-    onAccept();
+  const handleAccept = async () => {
+    try {
+      setErrorMsg(null);
+      const savedMicId = localStorage.getItem('selectedMicId');
+      const audioConstraints = savedMicId ? { deviceId: { exact: savedMicId } } : true;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+      // Liberar o microfone imediatamente, pois só queríamos a permissão
+      stream.getTracks().forEach(track => track.stop());
+      onAccept();
+    } catch (err) {
+      setErrorMsg('É necessário permitir o acesso ao microfone para participar da pesquisa.');
+    }
   };
 
   return (
@@ -98,6 +109,20 @@ const ConsentScreen: React.FC<ConsentScreenProps> = ({ onAccept, onDecline }) =>
                 label="Você concorda em participar desta gravação para fins de pesquisa, com uso dos dados de forma anonimizada e podendo pedir a exclusão a qualquer momento?"
               />
             </Box>
+
+            {errorMsg && (
+              <Box sx={{ mt: 2, textAlign: 'center', p: 2, backgroundColor: 'rgba(211, 47, 47, 0.1)', borderRadius: 2 }}>
+                <Typography color="error" variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                  {errorMsg}
+                </Typography>
+                <Button variant="outlined" color="primary" onClick={handleAccept} sx={{ mt: 1, mb: 1 }}>
+                  Permitir Microfone Novamente
+                </Button>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Se o botão acima não funcionar, clique no ícone de cadeado/permissão na barra de endereços do seu navegador e altere a permissão de Microfone para "Permitir".
+                </Typography>
+              </Box>
+            )}
 
             <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between', gap: 2 }}>
               <Button variant="outlined" color="secondary" onClick={onDecline} sx={{ flex: 1 }}>
