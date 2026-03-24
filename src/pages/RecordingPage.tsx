@@ -841,12 +841,10 @@ const RecordingPage: React.FC = () => {
       return;
     }
 
-    stopRecording(false, async (blob) => {
-      // ✅ ENVIA IMEDIATAMENTE
-      await sendAudioData(blob);
-
-      // ✅ DEPOIS inicia contagem
+    stopRecording(false, (blob) => {
+      // ✅ ENVIA E CONTA EM PARALELO
       setCountdown(3);
+      sendAudioData(blob); // Roda no background
     });
 
   }, [session, stopRecording, sendAudioData]);
@@ -866,16 +864,18 @@ const RecordingPage: React.FC = () => {
     if (countdown === null) return;
 
     if (countdown === 0) {
-      setCountdown(null);
-      advanceToNextPhrase(); // ✅ Só troca a frase aqui
+      if (!isProcessing && !uploadError) {
+        setCountdown(null);
+        advanceToNextPhrase(); // ✅ Só troca a frase se envio terminou com sucesso
+      }
     } else {
       const timer = setTimeout(() => {
-        setCountdown(prev => (prev !== null ? prev - 1 : null));
+        setCountdown(prev => (prev !== null && prev > 0 ? prev - 1 : prev));
       }, 1000);
 
       return () => clearTimeout(timer);
     }
-  }, [countdown, advanceToNextPhrase]);
+  }, [countdown, isProcessing, uploadError, advanceToNextPhrase]);
 
   useEffect(() => {
     setVideoFinished(false);
@@ -1293,9 +1293,16 @@ const RecordingPage: React.FC = () => {
           </Box>
         </>
       )}
-      <Modal open={countdown !== null}>
-        <Box sx={{ ...modalStyle, width: 200, textAlign: 'center' }}>
-          <Typography variant="h1">{countdown}</Typography>
+      <Modal open={countdown !== null && !uploadError}>
+        <Box sx={{ ...modalStyle, width: 'auto', textAlign: 'center', px: 6 }}>
+          {countdown === 0 && isProcessing ? (
+            <Box display="flex" flexDirection="column" alignItems="center">
+              <CircularProgress size={60} sx={{ mb: 2 }} />
+              <Typography variant="h5">Aguardando envio do áudio...</Typography>
+            </Box>
+          ) : (
+            <Typography variant="h1">{countdown}</Typography>
+          )}
         </Box>
       </Modal>
       <Modal open={finalizationStep === 'notes'} onClose={() => setFinalizationStep('idle')}>
@@ -1421,13 +1428,17 @@ const RecordingPage: React.FC = () => {
       </Modal>
       <Modal open={!!uploadError}>
         <Box sx={modalStyle}>
-          <Typography variant="h6">Erro no Upload</Typography>
+          <Typography variant="h6" color="error">Erro ao Enviar Áudio</Typography>
           <Typography sx={{ mt: 2 }}>
-            Ocorreu um erro ao enviar o áudio. Deseja tentar novamente?
+            Não foi possível enviar a gravação para o servidor. Por favor, tente enviar novamente para não perder seu progresso. Se o erro persistir, você pode optar por ignorar e descartar este áudio.
           </Typography>
-          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between' }}>
-            <Button onClick={handleRetryUpload} variant="contained">Tentar Novamente</Button>
-            <Button onClick={handleDiscardUpload} variant="outlined">Descartar</Button>
+          <Box sx={{ mt: 4, display: 'flex', justifyContent: 'space-between' }}>
+            <Button onClick={handleRetryUpload} variant="contained" color="primary">
+              Tentar Novamente
+            </Button>
+            <Button onClick={handleDiscardUpload} variant="outlined" color="error">
+              Ignorar e Descartar
+            </Button>
           </Box>
         </Box>
       </Modal>
