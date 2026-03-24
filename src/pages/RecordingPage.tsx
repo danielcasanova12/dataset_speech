@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Button, Typography, Container, Paper, Box, Modal, CircularProgress, TextField, LinearProgress } from '@mui/material';
+import { Button, Typography, Container, Paper, Box, Modal, CircularProgress, TextField, LinearProgress, IconButton } from '@mui/material';
 import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
+import HeadsetIcon from '@mui/icons-material/Headset';
+import HeadsetOffIcon from '@mui/icons-material/HeadsetOff';
 import VoiceCheckScreen from '../components/VoiceCheckScreen';
 import VoiceSampleScreen from '../components/VoiceSampleScreen';
 import RoomToneScreen from '../components/RoomToneScreen';
@@ -196,6 +198,8 @@ const RecordingPage: React.FC = () => {
   const [blockTutorialContent, setBlockTutorialContent] = useState<{ title: string; description: string; audioUrl?: string }>({ title: '', description: '' });
   const [isTutorialAudioFinished, setIsTutorialAudioFinished] = useState(false);
   const [isTutorialAudioMuted, setIsTutorialAudioMuted] = useState(false);
+  const [tutorialAudioRemaining, setTutorialAudioRemaining] = useState<number | null>(null);
+  const [isEntendiEarlyEnabled, setIsEntendiEarlyEnabled] = useState(false);
   const tutorialAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const [videoFinished, setVideoFinished] = useState(false);
@@ -681,6 +685,9 @@ const RecordingPage: React.FC = () => {
               const tutorial = getBlockTutorial(currentBlockId, blocks);
               setBlockTutorialContent(tutorial);
               setIsTutorialAudioFinished(false);
+              setIsTutorialAudioMuted(false);
+              setTutorialAudioRemaining(null);
+              setIsEntendiEarlyEnabled(false);
               setShowBlockTutorialModal(true);
           }
       } else {
@@ -755,12 +762,15 @@ const RecordingPage: React.FC = () => {
         const shouldShowTutorial = (isBlockChange && !isNextVideo) || (isCurrentVideo && !isNextVideo && !isBlockChange);
 
         if (shouldShowTutorial) {
-           // Mudança de bloco (ou transição de vídeo): Configura tutorial e NÃO inicia gravação
-           const tutorial = getBlockTutorial(nextBlockId, blocks);
-           setBlockTutorialContent(tutorial);
-           setIsTutorialAudioFinished(false);
-           setShowBlockTutorialModal(true);
-           // Gravação será iniciada no fechamento do modal
+          // Mudança de bloco (ou transição de vídeo): Configura tutorial e NÃO inicia gravação
+          const tutorial = getBlockTutorial(nextBlockId, blocks);
+          setBlockTutorialContent(tutorial);
+          setIsTutorialAudioFinished(false);
+          setIsTutorialAudioMuted(false);
+          setTutorialAudioRemaining(null);
+          setIsEntendiEarlyEnabled(false);
+          setShowBlockTutorialModal(true);
+          // Gravação será iniciada no fechamento do modal
         } else {
           // Mesma bloco ou próximo é vídeo: espera o hardware limpar e inicia
           setTimeout(() => {
@@ -1232,7 +1242,10 @@ const RecordingPage: React.FC = () => {
                       <Typography variant="h6" sx={{ color: getDbfsColor(dbfs), mr: 2, fontWeight: 'bold' }}>
                         {(isRecording || isUIPaused) && isFinite(dbfs) ? `${dbfs.toFixed(2)} dBFS` : ''}
                       </Typography>
-                      <Typography ref={timerElementRef} variant="h6">{formatTime(timer)}</Typography>
+                      <Typography ref={timerElementRef} variant="h6" sx={{ mr: 2 }}>{formatTime(timer)}</Typography>
+                      <IconButton onClick={() => setIsTutorialAudioMuted(!isTutorialAudioMuted)} color={isTutorialAudioMuted ? "error" : "primary"}>
+                        {isTutorialAudioMuted ? <HeadsetOffIcon /> : <HeadsetIcon />}
+                      </IconButton>
                     </Box>
 
                     <Box sx={{ height: 100, backgroundColor: '#1e1e1e', mb: 2, borderRadius: 1 }}>
@@ -1326,6 +1339,16 @@ const RecordingPage: React.FC = () => {
         <Box sx={modalStyle}>
           <Typography variant="h6">{blockTutorialContent.title}</Typography>
           <Typography sx={{ mt: 2 }}>{blockTutorialContent.description}</Typography>
+          {isTutorialAudioMuted && blockTutorialContent.audioUrl && (
+            <Typography sx={{ mt: 1, color: 'error.main', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setIsTutorialAudioMuted(false)}>
+              O áudio do narrador está mutado. Clique aqui para desmutar.
+            </Typography>
+          )}
+          {tutorialAudioRemaining !== null && tutorialAudioRemaining > 0 && !isTutorialAudioFinished && blockTutorialContent.title.toLowerCase().includes('emoção') && (
+            <Typography variant="body2" color="primary" sx={{ mt: 2, fontWeight: 'bold' }}>
+              A narração termina em {tutorialAudioRemaining} segundo(s)...
+            </Typography>
+          )}
           {blockTutorialContent.audioUrl && (
             <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <Button onClick={() => setIsTutorialAudioMuted(!isTutorialAudioMuted)} variant="outlined" size="small">
@@ -1336,7 +1359,26 @@ const RecordingPage: React.FC = () => {
                 autoPlay
                 muted={isTutorialAudioMuted}
                 src={blockTutorialContent.audioUrl}
-                onEnded={() => setIsTutorialAudioFinished(true)}
+                onTimeUpdate={(e) => {
+                  const audio = e.currentTarget;
+                  if (audio.duration) {
+                    const remaining = Math.max(0, Math.ceil(audio.duration - audio.currentTime));
+                    setTutorialAudioRemaining(remaining);
+                    if (remaining <= 5) setIsEntendiEarlyEnabled(true);
+                  }
+                }}
+                onLoadedMetadata={(e) => {
+                  const audio = e.currentTarget;
+                  if (audio.duration) {
+                    const remaining = Math.ceil(audio.duration);
+                    setTutorialAudioRemaining(remaining);
+                    if (remaining <= 5) setIsEntendiEarlyEnabled(true);
+                  }
+                }}
+                onEnded={() => {
+                  setIsTutorialAudioFinished(true);
+                  setTutorialAudioRemaining(0);
+                }}
                 onError={() => setIsTutorialAudioFinished(true)}
                 style={{ display: 'none' }}
               />
@@ -1346,7 +1388,7 @@ const RecordingPage: React.FC = () => {
             <Button 
               onClick={handleTutorialModalClose} 
               variant="contained"
-              disabled={!!blockTutorialContent.audioUrl && !isTutorialAudioFinished}
+              disabled={!!blockTutorialContent.audioUrl && !isTutorialAudioFinished && !isEntendiEarlyEnabled}
             >
               Entendi
             </Button>
