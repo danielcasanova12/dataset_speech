@@ -178,7 +178,7 @@ const RecordingPage: React.FC = () => {
   const retryCountRef = useRef(0);
   const MAX_RETRIES = 1;
   const [uploadError, setUploadError] = useState<Error | null>(null);
-  const [audioForRetry, setAudioForRetry] = useState<Blob | null>(null);
+  const [audioForRetry, setAudioForRetry] = useState<{ blob: Blob, isRoomTone: boolean, blockId?: number, roomToneType?: 'start' | 'end' } | null>(null);
 
   const [preRecordingStep, setPreRecordingStep] = useState<'voiceCheck' | 'voiceSample' | 'roomTone' | 'recording' | 'idle'>('idle'); 
   const [finalRoomToneCountdown, setFinalRoomToneCountdown] = useState<number | null>(null);
@@ -820,7 +820,7 @@ const RecordingPage: React.FC = () => {
      
     } catch (error: any) {
       setUploadError(error);
-      setAudioForRetry(audioBlob);
+      setAudioForRetry({ blob: audioBlob, isRoomTone: is_room_tone, blockId, roomToneType: room_tone_type });
     } finally {
       setIsProcessing(false);
     }
@@ -850,14 +850,22 @@ const RecordingPage: React.FC = () => {
   }, [session, stopRecording, sendAudioData]);
   const handleRetryUpload = () => {
     if (audioForRetry) {
-      sendAudioData(audioForRetry);
+      sendAudioData(audioForRetry.blob, audioForRetry.isRoomTone, audioForRetry.blockId, audioForRetry.roomToneType);
     }
   };
 
   const handleDiscardUpload = () => {
     setUploadError(null);
+    const retryData = audioForRetry;
     setAudioForRetry(null);
-    advanceToNextPhrase();
+    
+    if (retryData?.isRoomTone) {
+        if (retryData.roomToneType === 'end' || finalizationStep === 'roomTone') {
+            setFinalizationStep('notes');
+        }
+    } else {
+        advanceToNextPhrase();
+    }
   };
 
   useEffect(() => {
