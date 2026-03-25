@@ -6,6 +6,8 @@ import HeadsetIcon from '@mui/icons-material/Headset';
 import HeadsetOffIcon from '@mui/icons-material/HeadsetOff';
 import ContrastIcon from '@mui/icons-material/Contrast';
 import FontDownloadIcon from '@mui/icons-material/FontDownload';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import TimerOffOutlinedIcon from '@mui/icons-material/TimerOffOutlined';
 import VoiceCheckScreen from '../components/VoiceCheckScreen';
 import VoiceSampleScreen from '../components/VoiceSampleScreen';
 import RoomToneScreen from '../components/RoomToneScreen';
@@ -1393,7 +1395,13 @@ const RecordingPage: React.FC = () => {
                           fontWeight: 'bold', 
                           mb: 1,
                           fontSize: `${Math.max(14, phraseFontSize * 0.6)}px`, // Escala proporcionalmente (60% do tamanho da frase)
-                          transition: 'font-size 0.2s'
+                          transition: 'all 0.3s ease',
+                          backgroundColor: isHighContrast ? '#000000' : 'transparent',
+                          color: isHighContrast ? '#FFFF00' : 'primary.main',
+                          display: 'inline-block',
+                          width: '100%',
+                          p: isHighContrast ? 1 : 0,
+                          borderRadius: 1
                         }}
                       >
                         {getBlockTutorial(currentPhrase.blockId, blocks).instruction}
@@ -1544,77 +1552,90 @@ const RecordingPage: React.FC = () => {
       </Modal>
 
       <Modal open={showBlockTutorialModal}>
-        <Box sx={modalStyle}>
-          <Typography variant="h6">{blockTutorialContent.title}</Typography>
-          <Typography sx={{ mt: 2 }}>{blockTutorialContent.description}</Typography>
-          {isTutorialAudioMuted && blockTutorialContent.audioUrl && (
-            <Typography sx={{ mt: 1, color: 'error.main', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setIsTutorialAudioMuted(false)}>
-              O áudio do narrador está mutado. Clique aqui para desmutar.
-            </Typography>
-          )}
-          {tutorialAudioRemaining !== null && tutorialAudioRemaining > 0 && !isTutorialAudioFinished && blockTutorialContent.title.toLowerCase().includes('emoção') && (
-            <Typography variant="body2" color="primary" sx={{ mt: 2, fontWeight: 'bold' }}>
-              A narração termina em {tutorialAudioRemaining} segundo(s)...
-            </Typography>
-          )}
-          {blockTutorialContent.audioUrl && (
-            <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Button onClick={() => setIsTutorialAudioMuted(!isTutorialAudioMuted)} variant="outlined" size="small">
-                {isTutorialAudioMuted ? 'Desmutar Áudio' : 'Mutar Áudio'}
+        <Box sx={{ ...modalStyle, p: 0, overflow: 'hidden', borderRadius: 2 }}>
+          <Box sx={{ bgcolor: 'primary.main', color: 'primary.contrastText', p: 2, display: 'flex', alignItems: 'center' }}>
+            <InfoOutlinedIcon sx={{ mr: 1 }} />
+            <Typography variant="h6">{blockTutorialContent.title}</Typography>
+          </Box>
+          <Box sx={{ p: 3 }}>
+            <Typography sx={{ mt: 1, fontSize: '1.1rem' }}>{blockTutorialContent.description}</Typography>
+            {isTutorialAudioMuted && blockTutorialContent.audioUrl && (
+              <Typography sx={{ mt: 2, color: 'error.main', cursor: 'pointer', textDecoration: 'underline', fontWeight: 'bold' }} onClick={() => setIsTutorialAudioMuted(false)}>
+                O áudio do narrador está mutado. Clique aqui para desmutar.
+              </Typography>
+            )}
+            {tutorialAudioRemaining !== null && tutorialAudioRemaining > 0 && !isTutorialAudioFinished && blockTutorialContent.title.toLowerCase().includes('emoção') && (
+              <Typography variant="body2" color="primary" sx={{ mt: 2, fontWeight: 'bold' }}>
+                A narração termina em {tutorialAudioRemaining} segundo(s)...
+              </Typography>
+            )}
+            {blockTutorialContent.audioUrl && (
+              <Box sx={{ mt: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: 'background.default', p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                <Button onClick={() => setIsTutorialAudioMuted(!isTutorialAudioMuted)} variant="outlined" size="small" color={isTutorialAudioMuted ? "error" : "primary"} startIcon={isTutorialAudioMuted ? <HeadsetOffIcon /> : <HeadsetIcon />}>
+                  {isTutorialAudioMuted ? 'Desmutar Áudio' : 'Mutar Áudio'}
+                </Button>
+                <audio
+                  ref={tutorialAudioRef}
+                  autoPlay
+                  muted={isTutorialAudioMuted}
+                  src={blockTutorialContent.audioUrl}
+                  onTimeUpdate={(e) => {
+                    const audio = e.currentTarget;
+                    if (audio.duration) {
+                      const remaining = Math.max(0, Math.ceil(audio.duration - audio.currentTime));
+                      setTutorialAudioRemaining(remaining);
+                      if (remaining <= 5) setIsEntendiEarlyEnabled(true);
+                    }
+                  }}
+                  onLoadedMetadata={(e) => {
+                    const audio = e.currentTarget;
+                    if (audio.duration) {
+                      const remaining = Math.ceil(audio.duration);
+                      setTutorialAudioRemaining(remaining);
+                      if (remaining <= 5) setIsEntendiEarlyEnabled(true);
+                    }
+                  }}
+                  onEnded={() => {
+                    setIsTutorialAudioFinished(true);
+                    setTutorialAudioRemaining(0);
+                  }}
+                  onError={() => setIsTutorialAudioFinished(true)}
+                  style={{ display: 'none' }}
+                />
+              </Box>
+            )}
+            <Box sx={{ mt: 4, display: 'flex', justifyContent: 'flex-end' }}>
+              <Button 
+                onClick={handleTutorialModalClose} 
+                variant="contained"
+                size="large"
+                disabled={!!blockTutorialContent.audioUrl && !isTutorialAudioFinished && !isEntendiEarlyEnabled}
+              >
+                Entendi
               </Button>
-              <audio
-                ref={tutorialAudioRef}
-                autoPlay
-                muted={isTutorialAudioMuted}
-                src={blockTutorialContent.audioUrl}
-                onTimeUpdate={(e) => {
-                  const audio = e.currentTarget;
-                  if (audio.duration) {
-                    const remaining = Math.max(0, Math.ceil(audio.duration - audio.currentTime));
-                    setTutorialAudioRemaining(remaining);
-                    if (remaining <= 5) setIsEntendiEarlyEnabled(true);
-                  }
-                }}
-                onLoadedMetadata={(e) => {
-                  const audio = e.currentTarget;
-                  if (audio.duration) {
-                    const remaining = Math.ceil(audio.duration);
-                    setTutorialAudioRemaining(remaining);
-                    if (remaining <= 5) setIsEntendiEarlyEnabled(true);
-                  }
-                }}
-                onEnded={() => {
-                  setIsTutorialAudioFinished(true);
-                  setTutorialAudioRemaining(0);
-                }}
-                onError={() => setIsTutorialAudioFinished(true)}
-                style={{ display: 'none' }}
-              />
             </Box>
-          )}
-          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
-            <Button 
-              onClick={handleTutorialModalClose} 
-              variant="contained"
-              disabled={!!blockTutorialContent.audioUrl && !isTutorialAudioFinished && !isEntendiEarlyEnabled}
-            >
-              Entendi
-            </Button>
           </Box>
         </Box>
       </Modal>
 
       <Modal open={showTimeoutModal}>
-        <Box sx={modalStyle}>
-          <Typography variant="h6">Tempo Limite Excedido</Typography>
-          <Typography sx={{ mt: 2 }}>
-            Você demorou mais de 1 minuto nesta frase. O áudio será descartado por ser muito longo.
-            Por favor, tente gravar novamente.
-          </Typography>
-          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
-            <Button onClick={handleTimeoutModalClose} variant="contained" color="primary">
-              Entendi
-            </Button>
+        <Box sx={{ ...modalStyle, p: 0, overflow: 'hidden', borderRadius: 2 }}>
+          <Box sx={{ bgcolor: 'warning.main', color: 'warning.contrastText', p: 2, display: 'flex', alignItems: 'center' }}>
+            <TimerOffOutlinedIcon sx={{ mr: 1 }} />
+            <Typography variant="h6">Tempo Limite Excedido</Typography>
+          </Box>
+          <Box sx={{ p: 3 }}>
+            <Typography sx={{ mt: 1, fontSize: '1.1rem' }}>
+              Você demorou mais de 1 minuto nesta frase. O áudio será descartado por ser muito longo.
+            </Typography>
+            <Typography sx={{ mt: 2, fontWeight: 'bold' }}>
+              Por favor, tente gravar novamente de forma mais concisa.
+            </Typography>
+            <Box sx={{ mt: 4, display: 'flex', justifyContent: 'center' }}>
+              <Button onClick={handleTimeoutModalClose} variant="contained" color="primary" size="large">
+                Entendi
+              </Button>
+            </Box>
           </Box>
         </Box>
       </Modal>
