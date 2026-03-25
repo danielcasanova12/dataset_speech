@@ -1174,11 +1174,12 @@ const RecordingPage: React.FC = () => {
     const totalSeconds = Math.round(time);
     return `${Math.floor(totalSeconds / 60)}:${(totalSeconds % 60).toString().padStart(2, '0')}`;
   };
-  const getDbfsColor = (dbfs: number) => dbfs > -10 ? '#f44336' : dbfs > -25 ? '#ffeb3b' : '#4caf50';
-  const getVuPercent = (dbfs: number) => {
-    if (!isFinite(dbfs) || dbfs <= -60) return 0;
-    if (dbfs >= 0) return 100;
-    return ((dbfs + 60) / 60) * 100;
+  const getDbfsColor = (dbfs: number) => {
+    // Threshold ajustado para -35dB para ignorar ruído estático de microfones mutados
+    if (!Number.isFinite(dbfs) || dbfs <= -35) return '#666'; // Silêncio / Cinza
+    if (dbfs > -12) return '#f44336'; // Muito Barulho / Vermelho
+    if (dbfs > -25) return '#ffeb3b'; // Barulho Médio / Amarelo
+    return '#4caf50'; // Pouco Barulho (Fala) / Verde
   };
   
   // Extract unique video URLs for preloading
@@ -1362,14 +1363,15 @@ const RecordingPage: React.FC = () => {
                       {(isRecording || isUIPaused) && isFinite(dbfs) && (
                         <Box sx={{ display: 'flex', alignItems: 'center', mr: 3 }}>
                           <Typography variant="body2" sx={{ mr: 1, color: 'text.secondary', fontWeight: 'bold' }}>MIC</Typography>
-                          <Box sx={{ width: 120, height: 12, bgcolor: '#333', borderRadius: 1, overflow: 'hidden', border: '1px solid #555' }}>
-                            <Box sx={{ 
-                              width: `${getVuPercent(dbfs)}%`, 
-                              height: '100%', 
-                              bgcolor: getDbfsColor(dbfs),
-                              transition: 'width 0.1s ease-out, background-color 0.2s'
-                            }} />
-                          </Box>
+                          <Box sx={{ 
+                            width: 24, 
+                            height: 16, 
+                            bgcolor: getDbfsColor(dbfs), 
+                            borderRadius: 1, 
+                            border: '1px solid #555',
+                            transition: 'background-color 0.2s',
+                            boxShadow: dbfs > -35 ? `0 0 8px ${getDbfsColor(dbfs)}` : 'none'
+                          }} />
                         </Box>
                       )}
                       <Typography ref={timerElementRef} variant="h6" sx={{ mr: 2 }}>{formatTime(timer)}</Typography>
