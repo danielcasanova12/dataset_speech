@@ -18,12 +18,38 @@ const getHeaders = (contentType: string | null = 'application/json') => {
   return headers;
 };
 
-// Wrapper para fetch para centralizar segurança e credenciais
-const secureFetch = async (url: string, options: RequestInit = {}) => {
-  const response = await fetch(url, {
-    ...options,
-  });
-  return response;
+// Wrapper para fetch para centralizar segurança e credenciais com lógica de retry e timeout
+const secureFetch = async (url: string, options: RequestInit = {}, retries = 3, backoff = 1000) => {
+  const timeout = 15000; // 15 segundos de timeout por tentativa
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(id);
+    
+    // Se a resposta não for OK e ainda houver retries, e for um erro de servidor (5xx) ou timeout (408)
+    if (!response.ok && retries > 0 && (response.status >= 500 || response.status === 408)) {
+      console.warn(`Request failed with status ${response.status}. Retrying in ${backoff}ms... (${retries} retries left)`);
+      await new Promise(resolve => setTimeout(resolve, backoff));
+      return secureFetch(url, options, retries - 1, backoff * 2);
+    }
+    
+    return response;
+  } catch (error: any) {
+    clearTimeout(id);
+    // Se houver um erro de rede ou timeout (AbortError)
+    if (retries > 0) {
+      const isTimeout = error.name === 'AbortError';
+      console.warn(`${isTimeout ? 'Timeout' : 'Network error'}: ${error}. Retrying in ${backoff}ms... (${retries} retries left)`);
+      await new Promise(resolve => setTimeout(resolve, backoff));
+      return secureFetch(url, options, retries - 1, backoff * 2);
+    }
+    throw error;
+  }
 };
 
 export interface UserRegistrationData {

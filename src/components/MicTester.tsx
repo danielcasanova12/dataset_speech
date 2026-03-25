@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Box, Typography, Select, MenuItem, FormControl, InputLabel, CircularProgress } from '@mui/material';
+import { Box, Typography, Select, MenuItem, FormControl, InputLabel, CircularProgress, Accordion, AccordionSummary, AccordionDetails } from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import MicIcon from '@mui/icons-material/Mic';
 
 interface MicTesterProps {
   onMicStatusChange?: (hasMic: boolean) => void;
@@ -161,61 +163,76 @@ const MicTester: React.FC<MicTesterProps> = ({ onMicStatusChange }) => {
   };
 
   return (
-    <Box sx={{ width: '100%', maxWidth: 400, margin: 'auto', mt: 3, mb: 4, textAlign: 'center' }}>
-      <Typography variant="h6" gutterBottom>
-        Configuração de Microfone
-      </Typography>
-      
-      {isSearching ? (
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 2, p: 2 }}>
-          <CircularProgress size={24} sx={{ mr: 2 }} />
-          <Typography variant="body2">Procurando microfones...</Typography>
-        </Box>
-      ) : devices.length > 0 ? (
-        <FormControl fullWidth sx={{ mb: 2 }}>
-          <InputLabel id="mic-select-label">Selecione o Microfone</InputLabel>
-          <Select
-            labelId="mic-select-label"
-            value={selectedDeviceId}
-            label="Selecione o Microfone"
-            onChange={(e) => setSelectedDeviceId(e.target.value as string)}
-          >
-            {devices.map((device, index) => (
-              <MenuItem key={device.deviceId} value={device.deviceId}>
-                {device.label || `Microfone ${index + 1}`}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      ) : (
-        <Box sx={{ mb: 2, p: 2, border: '1px solid #ff9800', borderRadius: 2, backgroundColor: 'rgba(255, 152, 0, 0.1)' }}>
-          <Typography color="warning.main" variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
-            Nenhum microfone encontrado
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Certifique-se de que o microfone está conectado e que você deu permissão de acesso no navegador (clicando no ícone de cadeado na barra de endereços).
-          </Typography>
-        </Box>
-      )}
-
-      {!isSearching && devices.length > 0 && (
-        error ? (
-          <Typography color="error" variant="body2">{error}</Typography>
-        ) : (
-          <Box 
-            sx={{ 
-              width: '100%', 
-              height: 60, 
-              borderRadius: 2, 
-              overflow: 'hidden', 
-              border: '1px solid #ccc',
-              backgroundColor: 'rgb(240, 240, 240)' 
-            }}
-          >
-            <canvas ref={canvasRef} width="400" height="60" style={{ width: '100%', height: '100%', display: 'block' }} />
+    <Box sx={{ width: '100%', maxWidth: 600, margin: 'auto', mt: 3, mb: 4 }}>
+      <Accordion variant="outlined" sx={{ borderRadius: 2, '&:before': { display: 'none' } }}>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />} id="mic-tester-header">
+          <Box display="flex" alignItems="center" width="100%">
+            <MicIcon color="primary" sx={{ mr: 1 }} />
+            <Typography variant="subtitle1" fontWeight="bold">Configuração de Microfone</Typography>
+            {!isSearching && devices.length > 0 && selectedDeviceId && (
+              <Typography variant="body2" color="text.secondary" sx={{ ml: 'auto', mr: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }}>
+                {devices.find(d => d.deviceId === selectedDeviceId)?.label?.replace(/\s*\(\d+:\d+\)$/, '').trim() || 'Microfone Ativo'}
+              </Typography>
+            )}
           </Box>
-        )
-      )}
+        </AccordionSummary>
+        <AccordionDetails>
+          <Box sx={{ textAlign: 'center' }}>
+            {isSearching ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 2, p: 2 }}>
+                <CircularProgress size={24} sx={{ mr: 2 }} />
+                <Typography variant="body2">Procurando microfones...</Typography>
+              </Box>
+            ) : devices.length > 0 ? (
+              <FormControl fullWidth sx={{ mb: 3 }}>
+                <InputLabel id="mic-select-label">Selecione o Microfone</InputLabel>
+                <Select
+                  labelId="mic-select-label"
+                  value={selectedDeviceId}
+                  label="Selecione o Microfone"
+                  onChange={(e) => setSelectedDeviceId(e.target.value as string)}
+                  sx={{ textAlign: 'left' }}
+                >
+                  {devices.map((device, index) => (
+                    <MenuItem key={device.deviceId} value={device.deviceId}>
+                      {device.label || `Microfone ${index + 1}`}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            ) : (
+              <Box sx={{ mb: 2, p: 2, border: '1px solid #ff9800', borderRadius: 2, backgroundColor: 'rgba(255, 152, 0, 0.1)' }}>
+                <Typography color="warning.main" variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                  Nenhum microfone encontrado
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Certifique-se de que o microfone está conectado e que você deu permissão de acesso no navegador (clicando no ícone de cadeado na barra de endereços).
+                </Typography>
+              </Box>
+            )}
+
+            {!isSearching && devices.length > 0 && (
+              error ? (
+                <Typography color="error" variant="body2">{error}</Typography>
+              ) : (
+                <Box 
+                  sx={{ 
+                    width: '100%', 
+                    height: 80, 
+                    borderRadius: 2, 
+                    overflow: 'hidden', 
+                    border: '1px solid #e0e0e0',
+                    backgroundColor: '#1e1e1e',
+                    boxShadow: 'inset 0px 4px 10px rgba(0,0,0,0.5)'
+                  }}
+                >
+                  <canvas ref={canvasRef} width="600" height="80" style={{ width: '100%', height: '100%', display: 'block' }} />
+                </Box>
+              )
+            )}
+          </Box>
+        </AccordionDetails>
+      </Accordion>
     </Box>
   );
 };

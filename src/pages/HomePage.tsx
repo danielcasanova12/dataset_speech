@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { Button, Typography, Container, Box, CircularProgress, Grid, IconButton } from '@mui/material';
+import { Link, useNavigate } from 'react-router-dom';
+import { Button, Typography, Container, Box, CircularProgress, Grid, IconButton, Modal, Alert, AlertTitle } from '@mui/material';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
@@ -29,6 +30,29 @@ const HomePage: React.FC = () => {
           {mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
         </IconButton>
       </Box>
+
+      {!hasMic && isAuthenticated && (
+        <Box sx={{ width: '100%', maxWidth: 800, mt: 4, mb: -4 }}>
+          <Alert 
+            severity="error" 
+            variant="filled"
+            action={
+              <Button color="inherit" size="small" onClick={() => window.location.reload()} startIcon={<RefreshIcon />}>
+                RECARREGAR SITE
+              </Button>
+            }
+          >
+            <AlertTitle sx={{ fontWeight: 'bold' }}>Microfone não detectado ou bloqueado!</AlertTitle>
+            Para continuar, você precisa:
+            <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
+              <li>Conectar um microfone ao seu computador/dispositivo.</li>
+              <li>Liberar o acesso ao microfone clicando no ícone de <strong>Cadeado</strong> na barra de endereços do navegador e selecionando "Permitir".</li>
+              <li>Após realizar esses passos, clique no botão ao lado para recarregar a página.</li>
+            </ul>
+          </Alert>
+        </Box>
+      )}
+
       <Box
         display="flex"
         flexDirection="column"

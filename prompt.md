@@ -1,13 +1,10 @@
-Histórico de Moradia
-66-70 anos
-
-deixe mais granular a quantidade de anos aqui por favor e melhore para explicar que é para ele falar os local que ele morou 
-
-Estado
-
-Cidade
+Tenho que mudar toda a logica das frases para agora funcionar assim 
 
 
-http://localhost:3000/register e no /guest-register
+ser um csv enorme como todas as frases possiveis para aquele dataset separado por tudo que já tem hoje mas com uma diferença com a adição de um campo de tamanho 1,2,3
+curta media e longa 
 
-preciso melhorar a forma de apresentar isso 
+e para os datasets as frases devem serem escolhidas aletorias exemplo 10 aleatorias felizes 
+
+
+e para os videos pode ser criado outro csv ou algo assim pq lá vai ser sequencial 
