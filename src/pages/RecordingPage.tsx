@@ -236,6 +236,12 @@ const RecordingPage: React.FC = () => {
   const skipButtonRef = useRef<HTMLButtonElement>(null);
   const timerElementRef = useRef<HTMLElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  
+  const muteRef = useRef<HTMLButtonElement>(null);
+  const dyslexicRef = useRef<HTMLButtonElement>(null);
+  const contrastRef = useRef<HTMLButtonElement>(null);
+  const fontSizeRef = useRef<HTMLButtonElement>(null);
+  const pauseRef = useRef<HTMLButtonElement>(null);
 
   const visualize = useCallback(() => {
     const analyser = analyserRef.current;
@@ -645,6 +651,46 @@ const RecordingPage: React.FC = () => {
                 }
                 break;
             case 3:
+                const muteRect = muteRef.current?.getBoundingClientRect();
+                if (muteRect) {
+                    config.text = "Silencia ou ativa a narração e os áudios de guia.";
+                    config.top = muteRect.top + muteRect.height / 2;
+                    config.left = muteRect.right + 20;
+                }
+                break;
+            case 4:
+                const dyslexicRect = dyslexicRef.current?.getBoundingClientRect();
+                if (dyslexicRect) {
+                    config.text = "Muda para uma fonte especial que facilita a leitura para quem tem dislexia.";
+                    config.top = dyslexicRect.top + dyslexicRect.height / 2;
+                    config.left = dyslexicRect.right + 20;
+                }
+                break;
+            case 5:
+                const contrastRect = contrastRef.current?.getBoundingClientRect();
+                if (contrastRect) {
+                    config.text = "Ativa o modo de alto contraste para descansar os olhos e focar na leitura.";
+                    config.top = contrastRect.top + contrastRect.height / 2;
+                    config.left = contrastRect.right + 20;
+                }
+                break;
+            case 6:
+                const fontSizeRect = fontSizeRef.current?.getBoundingClientRect();
+                if (fontSizeRect) {
+                    config.text = "Aumenta ou diminui o tamanho do texto para a sua melhor comodidade.";
+                    config.top = fontSizeRect.top + fontSizeRect.height / 2;
+                    config.left = fontSizeRect.right + 20;
+                }
+                break;
+            case 7:
+                const pauseRect = pauseRef.current?.getBoundingClientRect();
+                if (pauseRect) {
+                    config.text = "Cansou? Clique aqui para pausar e continuar do mesmo ponto outro dia.";
+                    config.top = pauseRect.top + pauseRect.height / 2;
+                    config.left = pauseRect.right + 20;
+                }
+                break;
+            case 8:
                 const timerRect = timerElementRef.current?.getBoundingClientRect();
                 if (timerRect) {
                     config.text = "Fique de olho no tempo e no medidor de volume. Tudo pronto para começar?";
@@ -678,7 +724,7 @@ const RecordingPage: React.FC = () => {
   };
 
   const handleNextTutorialStep = useCallback(() => {
-    if (tutorialStep === 3) {
+    if (tutorialStep === 8) {
       setTutorialStep(null);
       
       const currentBlockId = phrases[currentPhraseIndex]?.blockId;
@@ -1327,7 +1373,7 @@ const RecordingPage: React.FC = () => {
                         </Box>
                       )}
                       <Typography ref={timerElementRef} variant="h6" sx={{ mr: 2 }}>{formatTime(timer)}</Typography>
-                      <IconButton onClick={() => setIsTutorialAudioMuted(!isTutorialAudioMuted)} color={isTutorialAudioMuted ? "error" : "primary"}>
+                      <IconButton ref={muteRef} onClick={() => setIsTutorialAudioMuted(!isTutorialAudioMuted)} color={isTutorialAudioMuted ? "error" : "primary"}>
                         {isTutorialAudioMuted ? <HeadsetOffIcon /> : <HeadsetIcon />}
                       </IconButton>
                     </Box>
@@ -1353,13 +1399,14 @@ const RecordingPage: React.FC = () => {
                     )}
 
                     <Box display="flex" justifyContent="flex-end" mb={1} gap={1}>
-                      <IconButton onClick={() => setIsDyslexicFont(!isDyslexicFont)} color={isDyslexicFont ? "primary" : "default"} title="Fonte para Dislexia">
+                      <IconButton ref={dyslexicRef} onClick={() => setIsDyslexicFont(!isDyslexicFont)} color={isDyslexicFont ? "primary" : "default"} title="Fonte para Dislexia">
                         <FontDownloadIcon />
                       </IconButton>
-                      <IconButton onClick={() => setIsHighContrast(!isHighContrast)} color={isHighContrast ? "primary" : "default"} title="Alto Contraste">
+                      <IconButton ref={contrastRef} onClick={() => setIsHighContrast(!isHighContrast)} color={isHighContrast ? "primary" : "default"} title="Alto Contraste">
                         <ContrastIcon />
                       </IconButton>
                       <Button 
+                        ref={fontSizeRef}
                         size="small" 
                         variant="outlined" 
                         onClick={() => setPhraseFontSize(prev => Math.max(16, prev - 4))} 
@@ -1428,7 +1475,7 @@ const RecordingPage: React.FC = () => {
 
             <Box mt={2} display="flex" justifyContent="center" gap={2}>
                 <Button component={Link} to="/" variant="outlined" color="error">Voltar</Button>
-                <Button variant="outlined" color="primary" onClick={handlePauseSession}>Pausar Sessão</Button>
+                <Button ref={pauseRef} variant="outlined" color="primary" onClick={handlePauseSession}>Pausar Sessão</Button>
                 <Button variant="outlined" color="error" onClick={() => setIsCancelModalOpen(true)}>Cancelar Sessão</Button>
             </Box>
           </Box>
