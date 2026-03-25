@@ -172,9 +172,11 @@ const RecordingPage: React.FC = () => {
   const [sessionNotes, setSessionNotes] = useState('');
   const [openFinishModal, setOpenFinishModal] = useState(false);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [isPauseModalOpen, setIsPauseModalOpen] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [showNoPhrasesModal, setShowNoPhrasesModal] = useState(false);
   const [showTimeoutModal, setShowTimeoutModal] = useState(false);
+  const [phraseFontSize, setPhraseFontSize] = useState(34);
   const retryCountRef = useRef(0);
   const MAX_RETRIES = 1;
   const [uploadError, setUploadError] = useState<Error | null>(null);
@@ -967,13 +969,57 @@ const RecordingPage: React.FC = () => {
     }
   }, [finalizationStep, startRecording, stopRecording, sendAudioData]);
   
-  const handleNextPhrase = () => processPhraseChange(false);
-  const handleSkipPhrase = () => processPhraseChange(true);
+  const handleNextPhrase = useCallback(() => processPhraseChange(false), [processPhraseChange]);
+  const handleSkipPhrase = useCallback(() => processPhraseChange(true), [processPhraseChange]);
 
   const handleNextVideoPhrase = useCallback(() => {
     resetRecordingState();
     advanceToNextPhrase();
   }, [resetRecordingState, advanceToNextPhrase]);
+
+  // Atalhos de Teclado para Produtividade
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Ignorar se o usuário estiver digitando em um campo de texto
+      const target = event.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+
+      // Se houver erro de upload, impedir atalhos para não ignorar o erro sem querer
+      if (uploadError) return;
+
+      if (event.key === 'Enter') {
+        if (showBlockTutorialModal) {
+          // No tutorial, o Enter funciona como o "Entendi"
+          const isDisabled = !!blockTutorialContent.audioUrl && !isTutorialAudioFinished && !isEntendiEarlyEnabled;
+          if (!isDisabled) handleTutorialModalClose();
+        } else if (isTutorialActive) {
+          // No tutorial do sistema (tooltips), o Enter vai para o próximo passo
+          handleNextTutorialStep();
+        } else if (isVideoPhrase(currentPhraseIndex)) {
+          // No vídeo, o Enter avança se o vídeo terminou
+          if (videoFinished && !isProcessing) handleNextVideoPhrase();
+        } else {
+          // Na gravação normal, o Enter salva e pula
+          if (isRecording && !isProcessing && countdown === null) handleNextPhrase();
+        }
+      } else if (event.key === 'ArrowRight') {
+        // Seta para direita pula a frase (apenas se não for vídeo e não estiver processando)
+        if (!showBlockTutorialModal && !isTutorialActive && !isVideoPhrase(currentPhraseIndex) && !isProcessing && countdown === null) {
+          handleSkipPhrase();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    isRecording, isProcessing, countdown, currentPhraseIndex, isVideoPhrase, 
+    videoFinished, handleNextPhrase, handleSkipPhrase, handleNextVideoPhrase,
+    uploadError, showBlockTutorialModal, isTutorialActive, handleNextTutorialStep,
+    handleTutorialModalClose, blockTutorialContent, isTutorialAudioFinished, isEntendiEarlyEnabled
+  ]);
 
   const replayVideo = useCallback(() => {
     const video = videoRef.current;
@@ -1026,6 +1072,17 @@ const RecordingPage: React.FC = () => {
     }
   }, [existingSessionInfo, datasetId, setIsLoading, setError, setExistingSessionInfo, setSession, setCurrentPhraseIndex, setPreRecordingStep, setShowExistingSessionModal, setActiveSessionInfo]);
 
+  const handlePauseSession = () => {
+    stopRecording(true);
+    resetRecordingState();
+    setIsPauseModalOpen(true);
+  };
+
+  const confirmPauseSession = () => {
+    setIsPauseModalOpen(false);
+    navigate('/');
+  };
+
   const confirmCancelSession = async () => {
     if (session) {
       try {
@@ -1067,7 +1124,12 @@ const RecordingPage: React.FC = () => {
     const totalSeconds = Math.round(time);
     return `${Math.floor(totalSeconds / 60)}:${(totalSeconds % 60).toString().padStart(2, '0')}`;
   };
-  const getDbfsColor = (dbfs: number) => dbfs > -20 ? 'red' : dbfs > -40 ? 'yellow' : 'green';
+  const getDbfsColor = (dbfs: number) => dbfs > -10 ? '#f44336' : dbfs > -25 ? '#ffeb3b' : '#4caf50';
+  const getVuPercent = (dbfs: number) => {
+    if (!isFinite(dbfs) || dbfs <= -60) return 0;
+    if (dbfs >= 0) return 100;
+    return ((dbfs + 60) / 60) * 100;
+  };
   
   // Extract unique video URLs for preloading
   const uniqueVideosToPreload = Array.from(
@@ -1141,7 +1203,7 @@ const RecordingPage: React.FC = () => {
     return (
       <Container sx={{ textAlign: 'center', mt: 10 }}>
         <Typography variant="h5" color="error">{error}</Typography>
-        <Button component={Link} to="/" variant="contained" sx={{ mt: 2 }}>
+        <Button component={Link} to="/" variant="outlined" color="error" sx={{ mt: 2 }}>
           Voltar para a Home
         </Button>
       </Container>
@@ -1164,7 +1226,7 @@ const RecordingPage: React.FC = () => {
             Este conjunto de dados não parece ter frases para gravação.
           </Typography>
           <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
-            <Button onClick={() => navigate('/')} variant="contained">
+            <Button onClick={() => navigate('/')} variant="outlined" color="error">
               Voltar ao Início
             </Button>
           </Box>
@@ -1189,8 +1251,8 @@ const RecordingPage: React.FC = () => {
             Tem certeza que deseja cancelar esta sessão? Todo o seu progresso será perdido.
           </Typography>
           <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between' }}>
-            <Button onClick={() => setIsCancelModalOpen(false)}>Não, Voltar</Button>
-            <Button onClick={confirmCancelSession} color="error">Sim, Cancelar</Button>
+            <Button onClick={() => setIsCancelModalOpen(false)} variant="outlined" color="error">Não, Voltar</Button>
+            <Button onClick={confirmCancelSession} color="error" variant="contained">Sim, Cancelar</Button>
           </Box>
         </Box>
       </Modal>
@@ -1247,9 +1309,19 @@ const RecordingPage: React.FC = () => {
                       {isRecording && <FiberManualRecordIcon sx={{ color: 'red', animation: 'blinking 1s infinite' }} />}
                       <Typography variant="h6" sx={{ ml: 1 }}>{isRecording ? 'Gravando...' : 'Pronto'}</Typography>
                       <Box flexGrow={1} />
-                      <Typography variant="h6" sx={{ color: getDbfsColor(dbfs), mr: 2, fontWeight: 'bold' }}>
-                        {(isRecording || isUIPaused) && isFinite(dbfs) ? `${dbfs.toFixed(2)} dBFS` : ''}
-                      </Typography>
+                      {(isRecording || isUIPaused) && isFinite(dbfs) && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', mr: 3 }}>
+                          <Typography variant="body2" sx={{ mr: 1, color: 'text.secondary', fontWeight: 'bold' }}>MIC</Typography>
+                          <Box sx={{ width: 120, height: 12, bgcolor: '#333', borderRadius: 1, overflow: 'hidden', border: '1px solid #555' }}>
+                            <Box sx={{ 
+                              width: `${getVuPercent(dbfs)}%`, 
+                              height: '100%', 
+                              bgcolor: getDbfsColor(dbfs),
+                              transition: 'width 0.1s ease-out, background-color 0.2s'
+                            }} />
+                          </Box>
+                        </Box>
+                      )}
                       <Typography ref={timerElementRef} variant="h6" sx={{ mr: 2 }}>{formatTime(timer)}</Typography>
                       <IconButton onClick={() => setIsTutorialAudioMuted(!isTutorialAudioMuted)} color={isTutorialAudioMuted ? "error" : "primary"}>
                         {isTutorialAudioMuted ? <HeadsetOffIcon /> : <HeadsetIcon />}
@@ -1261,12 +1333,54 @@ const RecordingPage: React.FC = () => {
                     </Box>
 
                     {getBlockTutorial(currentPhrase.blockId, blocks)?.instruction && (
-                      <Typography variant="h6" color="primary" textAlign="center" sx={{ fontWeight: 'bold', mb: 1 }}>
+                      <Typography 
+                        variant="h6" 
+                        color="primary" 
+                        textAlign="center" 
+                        sx={{ 
+                          fontWeight: 'bold', 
+                          mb: 1,
+                          fontSize: `${Math.max(14, phraseFontSize * 0.6)}px`, // Escala proporcionalmente (60% do tamanho da frase)
+                          transition: 'font-size 0.2s'
+                        }}
+                      >
                         {getBlockTutorial(currentPhrase.blockId, blocks).instruction}
                       </Typography>
                     )}
 
-                    <Typography ref={phraseTextRef} variant="h4" sx={{ minHeight: 100, textAlign: 'center', my: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Box display="flex" justifyContent="flex-end" mb={1}>
+                      <Button 
+                        size="small" 
+                        variant="outlined" 
+                        onClick={() => setPhraseFontSize(prev => Math.max(16, prev - 4))} 
+                        sx={{ minWidth: '40px', mr: 1, padding: '4px' }}
+                      >
+                        A-
+                      </Button>
+                      <Button 
+                        size="small" 
+                        variant="outlined" 
+                        onClick={() => setPhraseFontSize(prev => Math.min(72, prev + 4))} 
+                        sx={{ minWidth: '40px', padding: '4px' }}
+                      >
+                        A+
+                      </Button>
+                    </Box>
+
+                    <Typography 
+                      ref={phraseTextRef} 
+                      variant="h4" 
+                      sx={{ 
+                        fontSize: `${phraseFontSize}px`,
+                        minHeight: 100, 
+                        textAlign: 'center', 
+                        my: 2, 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        lineHeight: 1.2
+                      }}
+                    >
                       {currentPhrase.text}
                     </Typography>
 
@@ -1294,13 +1408,25 @@ const RecordingPage: React.FC = () => {
             )
             )}
 
-            <Box mt={2} display="flex" justifyContent="center">
-                <Button component={Link} to="/">Voltar</Button>
+            <Box mt={2} display="flex" justifyContent="center" gap={2}>
+                <Button component={Link} to="/" variant="outlined" color="error">Voltar</Button>
+                <Button variant="outlined" color="primary" onClick={handlePauseSession}>Pausar Sessão</Button>
                 <Button variant="outlined" color="error" onClick={() => setIsCancelModalOpen(true)}>Cancelar Sessão</Button>
             </Box>
           </Box>
         </>
       )}
+      <Modal open={isPauseModalOpen} onClose={() => setIsPauseModalOpen(false)}>
+        <Box sx={modalStyle}>
+          <Typography variant="h6" color="primary">Progresso Salvo com Sucesso!</Typography>
+          <Typography sx={{ mt: 2 }}>
+            Sua sessão foi pausada. Você pode fechar esta aba e voltar amanhã que continuará exatamente da frase atual.
+          </Typography>
+          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
+            <Button onClick={confirmPauseSession} variant="contained" color="primary">Entendi, ir para a Home</Button>
+          </Box>
+        </Box>
+      </Modal>
       <Modal open={countdown !== null && !uploadError}>
         <Box sx={{ ...modalStyle, width: 'auto', textAlign: 'center', px: 6 }}>
           {countdown === 0 && isProcessing ? (
@@ -1332,7 +1458,7 @@ const RecordingPage: React.FC = () => {
       <Modal open={openFinishModal}>
         <Box sx={modalStyle}>
           <Typography variant="h6">Sessão Finalizada!</Typography>
-          <Button component={Link} to="/">Voltar para Home</Button>
+          <Button component={Link} to="/" variant="outlined" color="error" sx={{ mt: 2 }}>Voltar para Home</Button>
         </Box>
       </Modal>
 

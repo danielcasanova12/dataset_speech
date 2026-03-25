@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Typography, TextField, Button, Box, Link as MuiLink, Alert, Grid, IconButton, Card, CardContent, Avatar, Select, MenuItem, FormControl, InputLabel, Paper, Modal } from '@mui/material';
+import { Container, Typography, TextField, Button, Box, Link as MuiLink, Alert, Grid, IconButton, Card, CardContent, Avatar, Select, MenuItem, FormControl, InputLabel, Paper, Modal, Stepper, Step, StepLabel } from '@mui/material';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { UserRegistrationData } from '../services/api';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import HowToRegOutlinedIcon from '@mui/icons-material/HowToRegOutlined';
+import ChildCareOutlinedIcon from '@mui/icons-material/ChildCareOutlined';
+import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
+import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined';
+import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import ConsentScreen from '../components/ConsentScreen';
 import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
@@ -23,6 +27,8 @@ interface IBGECidadeResponse {
 }
 
 const GuestRegisterPage: React.FC = () => {
+  const [activeStep, setActiveStep] = useState(0);
+  const steps = ['Dados Básicos', 'Localização Atual', 'Histórico de Moradia'];
   const [formData, setFormData] = useState<UserRegistrationData>({
     email: '',
     password: 'DEFAULT_GUEST_PASSWORD', // Hardcoded password for guest users
@@ -164,66 +170,88 @@ const GuestRegisterPage: React.FC = () => {
                     </Avatar>
                     <Typography component="h1" variant="h5">Entrar como Visitante</Typography>
                 </Box>
-                <Box component="form" onSubmit={handleSubmit} sx={{ mt: 3 }}>
+                <Stepper activeStep={activeStep} sx={{ mb: 4 }} alternativeLabel>
+                  {steps.map((label) => (
+                    <Step key={label}>
+                      <StepLabel>{label}</StepLabel>
+                    </Step>
+                  ))}
+                </Stepper>
+                <Box component="form" onSubmit={(e) => { e.preventDefault(); if (activeStep === steps.length - 1) handleSubmit(e); else setActiveStep(prev => prev + 1); }} sx={{ mt: 3 }}>
                 {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
+                {activeStep === 0 && (
+                  <>
                 <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>Dados Pessoais</Typography>
-                <Grid container spacing={2}>
-                  <Grid item xs={12}>
-                    <TextField required fullWidth label="Nome Completo" name="nome_completo" value={formData.nome_completo} onChange={handleChange} />
-                  </Grid>
-                  <Grid item xs={12}>
-                    <TextField 
-                        required 
-                        fullWidth 
-                        label="Email" 
-                        name="email" 
-                        type="email" 
-                        value={formData.email} 
-                        onChange={handleChange}
-                        error={!!validationError.email}
-                        helperText={validationError.email}
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <LocalizationProvider dateAdapter={AdapterDayjs}>
-                      <DatePicker
-                        label="Data de Nascimento *"
-                        value={formData.data_nascimento ? dayjs(formData.data_nascimento) : null}
-                        onChange={(newValue) => {
-                          setFormData(prev => ({
-                            ...prev,
-                            data_nascimento: newValue ? newValue.format('YYYY-MM-DD') : ''
-                          }));
-                        }}
-                        format="DD/MM/YYYY"
-                        slotProps={{
-                          textField: {
-                            fullWidth: true,
-                            required: true,
-                          }
-                        }}
-                      />
-                    </LocalizationProvider>
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <FormControl fullWidth required>
-                      <InputLabel>Gênero</InputLabel>
-                      <Select name="genero" value={formData.genero} onChange={(e) => handleChange(e as any)}>
-                        <MenuItem value="Masculino">Masculino</MenuItem>
-                        <MenuItem value="Feminino">Feminino</MenuItem>
-                        <MenuItem value="Outro">Outro</MenuItem>
-                      </Select>
-                    </FormControl>
-                  </Grid>
-                </Grid>
+                <Box sx={{ p: 3, bgcolor: 'background.default', borderRadius: 2, border: '1px solid', borderColor: 'divider', mb: 3 }}>
+                    <Box display="flex" alignItems="center" mb={2}>
+                        <PersonOutlineOutlinedIcon color="primary" sx={{ mr: 1 }} />
+                        <Typography variant="subtitle1" fontWeight="bold">Informações Básicas</Typography>
+                    </Box>
+                    <Grid container spacing={2}>
+                      <Grid item xs={12}>
+                        <TextField required fullWidth label="Nome Completo" name="nome_completo" value={formData.nome_completo} onChange={handleChange} />
+                      </Grid>
+                      <Grid item xs={12}>
+                        <TextField 
+                            required 
+                            fullWidth 
+                            label="Email" 
+                            name="email" 
+                            type="email" 
+                            value={formData.email} 
+                            onChange={handleChange}
+                            error={!!validationError.email}
+                            helperText={validationError.email}
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <LocalizationProvider dateAdapter={AdapterDayjs}>
+                          <DatePicker
+                            label="Data de Nascimento *"
+                            value={formData.data_nascimento ? dayjs(formData.data_nascimento) : null}
+                            onChange={(newValue) => {
+                              setFormData(prev => ({
+                                ...prev,
+                                data_nascimento: newValue ? newValue.format('YYYY-MM-DD') : ''
+                              }));
+                            }}
+                            format="DD/MM/YYYY"
+                            slotProps={{
+                              textField: {
+                                fullWidth: true,
+                                required: true,
+                              }
+                            }}
+                          />
+                        </LocalizationProvider>
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <FormControl fullWidth required>
+                          <InputLabel>Gênero</InputLabel>
+                          <Select name="genero" value={formData.genero} onChange={(e) => handleChange(e as any)}>
+                            <MenuItem value="Masculino">Masculino</MenuItem>
+                            <MenuItem value="Feminino">Feminino</MenuItem>
+                            <MenuItem value="Outro">Outro</MenuItem>
+                          </Select>
+                        </FormControl>
+                      </Grid>
+                    </Grid>
+                </Box>
+                </>
+                )}
 
-                <Typography variant="h6" gutterBottom sx={{ mt: 4 }}>Localização</Typography>
-                <Grid container spacing={2}>
+                {activeStep === 1 && (
+                  <>
+                <Typography variant="h6" gutterBottom sx={{ mt: 4 }}>Localização Atual</Typography>
+                <Grid container spacing={3}>
                   <Grid item xs={12}>
-                    <Paper sx={{ p: 2, border: '1px solid #ddd' }}>
-                        <Typography variant="subtitle1" fontWeight="bold">Cidade de Nascimento</Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    <Box sx={{ p: 3, bgcolor: 'background.default', borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                        <Box display="flex" alignItems="center" mb={1}>
+                            <ChildCareOutlinedIcon color="primary" sx={{ mr: 1 }} />
+                            <Typography variant="subtitle1" fontWeight="bold">Cidade de Nascimento</Typography>
+                        </Box>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
                             Informe aqui o estado e a cidade onde você nasceu. Essa informação é fundamental para identificarmos a origem do seu sotaque.
                         </Typography>
                         <Grid container spacing={2}>
@@ -234,6 +262,7 @@ const GuestRegisterPage: React.FC = () => {
                                         value={formData.cidade_nascimento.estado}
                                         onChange={(e) => {
                                             handleNestedChange('cidade_nascimento', 'estado', e.target.value);
+                                            handleNestedChange('cidade_nascimento', 'cidade', '');
                                             fetchCidades(e.target.value, setCidadesNascimento);
                                         }}
                                     >
@@ -257,12 +286,15 @@ const GuestRegisterPage: React.FC = () => {
                                 </FormControl>
                             </Grid>
                         </Grid>
-                    </Paper>
+                    </Box>
                   </Grid>
                   <Grid item xs={12}>
-                    <Paper sx={{ p: 2, border: '1px solid #ddd' }}>
-                        <Typography variant="subtitle1" fontWeight="bold">Cidade Atual</Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    <Box sx={{ p: 3, bgcolor: 'background.default', borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                        <Box display="flex" alignItems="center" mb={1}>
+                            <HomeOutlinedIcon color="primary" sx={{ mr: 1 }} />
+                            <Typography variant="subtitle1" fontWeight="bold">Cidade Atual</Typography>
+                        </Box>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
                             Informe o local onde você reside atualmente.
                         </Typography>
                         <Grid container spacing={2}>
@@ -273,6 +305,7 @@ const GuestRegisterPage: React.FC = () => {
                                         value={formData.cidade_atual.estado}
                                         onChange={(e) => {
                                             handleNestedChange('cidade_atual', 'estado', e.target.value);
+                                            handleNestedChange('cidade_atual', 'cidade', '');
                                             fetchCidades(e.target.value, setCidadesAtual);
                                         }}
                                     >
@@ -296,23 +329,30 @@ const GuestRegisterPage: React.FC = () => {
                                 </FormControl>
                             </Grid>
                         </Grid>
-                    </Paper>
+                    </Box>
                   </Grid>
                 </Grid>
+                </>
+                )}
 
+                {activeStep === 2 && (
+                  <>
                 <Box display="flex" flexDirection="column" mt={4} mb={2}>
-                    <Box display="flex" justifyContent="space-between" alignItems="center">
-                        <Typography variant="h6">Histórico de Moradia</Typography>
+                    <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                        <Box display="flex" alignItems="center">
+                            <HistoryOutlinedIcon color="primary" sx={{ mr: 1 }} />
+                            <Typography variant="h6">Histórico de Moradia</Typography>
+                        </Box>
                         <Button startIcon={<AddCircleOutlineIcon />} onClick={addHistorico} variant="outlined" size="small">Adicionar Local</Button>
                     </Box>
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 1 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                         Por favor, adicione os locais onde você já morou e informe por quanto tempo residiu em cada um. Isso nos ajuda a entender melhor a formação do seu sotaque.
                     </Typography>
                 </Box>
                 {formData.historico_moradia.map((item, index) => {
                   const periodos = ["Menos de 1 ano", ...Array.from({ length: 100 }, (_, i) => `${i + 1} ano${i === 0 ? '' : 's'}`), "Mais de 100 anos"];
                   return (
-                    <Box key={index} sx={{ mb: 2, p: 2, border: '1px solid #444', borderRadius: 1 }}>
+                    <Box key={index} sx={{ p: 3, bgcolor: 'background.default', borderRadius: 2, border: '1px solid', borderColor: 'divider', mb: 3 }}>
                       <Grid container spacing={2} alignItems="center">
                           <Grid item xs={12} sm={4}>
                               <FormControl fullWidth>
@@ -332,6 +372,7 @@ const GuestRegisterPage: React.FC = () => {
                                       value={item.endereco.estado}
                                       onChange={(e) => {
                                           handleHistoricoChange(index, 'endereco', e.target.value, 'estado');
+                                          handleHistoricoChange(index, 'endereco', '', 'cidade');
                                           fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${e.target.value}/municipios`)
                                               .then(response => response.json())
                                               .then(data => setCidadesHistorico(prev => ({ ...prev, [index]: data })));
@@ -363,21 +404,38 @@ const GuestRegisterPage: React.FC = () => {
                     </Box>
                   );
                 })}
+                </>
+                )}
 
 
-                <Button type="submit" fullWidth variant="contained" size="large" disabled={isLoading || !!validationError.email || !hasConsented} sx={{ mt: 4 }}>
-                    {isLoading ? 'Entrando...' : 'Entrar como Visitante'}
-                </Button>
-                <Grid container justifyContent="space-between" sx={{mt: 2}}>
-                    <Grid item>
-                        <Button component={Link} to="/" variant="text" color="primary">
-                            Voltar
-                        </Button>
-                    </Grid>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    disabled={activeStep === 0 || isLoading}
+                    onClick={() => setActiveStep((prev) => prev - 1)}
+                    sx={{ mr: 1 }}
+                  >
+                    Voltar
+                  </Button>
+                  
+                  <Button type="submit" variant="contained" disabled={isLoading || !!validationError.email || !hasConsented}>
+                      {activeStep === steps.length - 1 ? (isLoading ? 'Entrando...' : 'Entrar como Visitante') : 'Próximo'}
+                  </Button>
+                </Box>
+                
+                <Grid container justifyContent="center" sx={{mt: 3}}>
                     <Grid item>
                         <MuiLink component={Link} to="/login" variant="body2">
                         {"Já tem uma conta? Faça Login"}
                         </MuiLink>
+                    </Grid>
+                </Grid>
+                <Grid container justifyContent="center" sx={{mt: 2}}>
+                    <Grid item>
+                        <Button component={Link} to="/" variant="outlined" color="error">
+                            Voltar para a Home
+                        </Button>
                     </Grid>
                 </Grid>
                 </Box>
