@@ -4,6 +4,8 @@ import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import HeadsetIcon from '@mui/icons-material/Headset';
 import HeadsetOffIcon from '@mui/icons-material/HeadsetOff';
+import ContrastIcon from '@mui/icons-material/Contrast';
+import FontDownloadIcon from '@mui/icons-material/FontDownload';
 import VoiceCheckScreen from '../components/VoiceCheckScreen';
 import VoiceSampleScreen from '../components/VoiceSampleScreen';
 import RoomToneScreen from '../components/RoomToneScreen';
@@ -177,6 +179,8 @@ const RecordingPage: React.FC = () => {
   const [showNoPhrasesModal, setShowNoPhrasesModal] = useState(false);
   const [showTimeoutModal, setShowTimeoutModal] = useState(false);
   const [phraseFontSize, setPhraseFontSize] = useState(34);
+  const [isHighContrast, setIsHighContrast] = useState(false);
+  const [isDyslexicFont, setIsDyslexicFont] = useState(false);
   const retryCountRef = useRef(0);
   const MAX_RETRIES = 1;
   const [uploadError, setUploadError] = useState<Error | null>(null);
@@ -1348,12 +1352,18 @@ const RecordingPage: React.FC = () => {
                       </Typography>
                     )}
 
-                    <Box display="flex" justifyContent="flex-end" mb={1}>
+                    <Box display="flex" justifyContent="flex-end" mb={1} gap={1}>
+                      <IconButton onClick={() => setIsDyslexicFont(!isDyslexicFont)} color={isDyslexicFont ? "primary" : "default"} title="Fonte para Dislexia">
+                        <FontDownloadIcon />
+                      </IconButton>
+                      <IconButton onClick={() => setIsHighContrast(!isHighContrast)} color={isHighContrast ? "primary" : "default"} title="Alto Contraste">
+                        <ContrastIcon />
+                      </IconButton>
                       <Button 
                         size="small" 
                         variant="outlined" 
                         onClick={() => setPhraseFontSize(prev => Math.max(16, prev - 4))} 
-                        sx={{ minWidth: '40px', mr: 1, padding: '4px' }}
+                        sx={{ minWidth: '40px', padding: '4px' }}
                       >
                         A-
                       </Button>
@@ -1372,13 +1382,21 @@ const RecordingPage: React.FC = () => {
                       variant="h4" 
                       sx={{ 
                         fontSize: `${phraseFontSize}px`,
+                        fontFamily: isDyslexicFont ? '"Comic Sans MS", "Comic Sans", cursive, sans-serif' : 'inherit',
+                        letterSpacing: isDyslexicFont ? '1px' : 'normal',
+                        wordSpacing: isDyslexicFont ? '2px' : 'normal',
                         minHeight: 100, 
                         textAlign: 'center', 
                         my: 2, 
+                        p: 2,
                         display: 'flex', 
                         alignItems: 'center', 
                         justifyContent: 'center',
-                        lineHeight: 1.2
+                        lineHeight: 1.2,
+                        backgroundColor: isHighContrast ? '#000000' : 'transparent',
+                        color: isHighContrast ? '#FFFF00' : 'inherit',
+                        borderRadius: 1,
+                        transition: 'all 0.3s ease'
                       }}
                     >
                       {currentPhrase.text}
