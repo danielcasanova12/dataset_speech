@@ -789,7 +789,6 @@ const RecordingPage: React.FC = () => {
     if (!session) return;
     
     try {
-      setIsProcessing(true);
       setIsUIPaused(true); 
       
       // 1. Matar a gravação anterior brutalmente
@@ -841,7 +840,7 @@ const RecordingPage: React.FC = () => {
         console.error("Erro ao avançar:", error);
     } finally {
         setIsProcessing(false);
-    }
+      }
   }, [session, currentPhraseIndex, phrases, stopRecording, resetRecordingState, startPhraseFlow]);
 
   const sendAudioData = useCallback(async (audioBlob: Blob, is_room_tone = false, blockId?: number, room_tone_type?: 'start' | 'end') => {
@@ -1502,15 +1501,26 @@ const RecordingPage: React.FC = () => {
           </Box>
         </Box>
       </Modal>
-      <Modal open={countdown !== null && !uploadError}>
-        <Box sx={{ ...modalStyle, width: 'auto', textAlign: 'center', px: 6 }}>
+      <Modal open={countdown !== null && !uploadError} disableAutoFocus disableEnforceFocus sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Box sx={{ outline: 'none', textAlign: 'center' }}>
           {countdown === 0 && isProcessing ? (
-            <Box display="flex" flexDirection="column" alignItems="center">
-              <CircularProgress size={60} sx={{ mb: 2 }} />
-              <Typography variant="h5">Aguardando envio do áudio...</Typography>
+            <Box display="flex" flexDirection="column" alignItems="center" sx={{ bgcolor: 'rgba(0,0,0,0.7)', p: 4, borderRadius: 4 }}>
+              <CircularProgress size={60} sx={{ mb: 2, color: 'white' }} />
+              <Typography variant="h5" color="white">Aguardando envio do áudio...</Typography>
             </Box>
           ) : (
-            <Typography variant="h1">{countdown}</Typography>
+            <Typography 
+              variant="h1" 
+              sx={{ 
+                color: '#ffffff', 
+                fontSize: '12rem', 
+                fontWeight: 900,
+                textShadow: '0px 0px 20px rgba(0,0,0,0.8), 2px 4px 10px rgba(0,0,0,0.5)',
+                animation: 'popIn 1s ease-out infinite'
+              }}
+            >
+              {countdown}
+            </Typography>
           )}
         </Box>
       </Modal>
