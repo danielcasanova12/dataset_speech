@@ -1,0 +1,45 @@
+{
+  "version": "2.0.0",
+  "datasets": {
+    "voz_geral": {
+      "name": "Dataset de Voz Geral",
+      "slug": "voz-geral",
+      "csv_path": "/11_voz_geral_10m.csv",
+      "packages": {
+        "10M": {
+          "total_phrases": 20,
+          "proportions": { "p": 0.4, "m": 0.4, "g": 0.2 },
+          "blocks_sequence": [
+            { "blockId": 2, "phrase_count": 5 },
+            { "blockId": 5, "phrase_count": 5 },
+            { "blockId": 56, "phrase_count": 4 },
+            { "blockId": 55, "phrase_count": 3 },
+            { "blockId": 105, "phrase_count": 3 }
+          ]
+        },
+        "30M": {
+          "total_phrases": 30,
+          "proportions": { "p": 0.4, "m": 0.4, "g": 0.2 },
+          "blocks_sequence": [
+            { "blockId": 2, "phrase_count": 8 },
+            { "blockId": 5, "phrase_count": 6 },
+            { "blockId": 56, "phrase_count": 6 },
+            { "blockId": 55, "phrase_count": 5 },
+            { "blockId": 105, "phrase_count": 5 }
+          ]
+        },
+        "1H": {
+          "total_phrases": 50,
+          "proportions": { "p": 0.33, "m": 0.33, "g": 0.34 },
+          "blocks_sequence": [
+            { "blockId": 2, "phrase_count": 12 },
+            { "blockId": 5, "phrase_count": 10 },
+            { "blockId": 56, "phrase_count": 10 },
+            { "blockId": 55, "phrase_count": 9 },
+            { "blockId": 105, "phrase_count": 9 }
+          ]
+        }
+      }
+    }
+  }
+}

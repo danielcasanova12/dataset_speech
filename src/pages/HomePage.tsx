@@ -22,7 +22,6 @@ const HomePage: React.FC = () => {
     localStorage.removeItem('recording_progress');
   }, []);
 
-
   return (
     <Container>
       <Box sx={{ position: 'absolute', top: 16, right: 16 }}>

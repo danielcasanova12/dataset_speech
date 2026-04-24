@@ -1,28 +1,121 @@
-id,text,blockId,videoSrc
-1,"O gato subiu no telhado.",2,""
-2,"Que horas são agora?",2,""
-3,"A reunião foi adiada para a próxima semana.",2,""
-4,"Preciso comprar pão e leite no mercado.",2,""
-5,"O filme começou às oito da noite.",2,""
-6,"Ela trabalha em um escritório de advocacia.",2,""
-7,"A importância da educação para o desenvolvimento social e econômico de uma nação é inegável.",2,""
-8,"Os pesquisadores concluíram que a vacina experimental demonstrou resultados promissores na prevenção de novas infecções.",2,""
-9,"Você gostaria de café ou chá?",2,""
-10,"O trânsito estava congestionado por causa de um acidente na rodovia.",2,""
-11,"Que notícia incrível!",5,""
-12,"Vamos começar o projeto agora mesmo!",5,""
-13,"Você não vai acreditar no que aconteceu.",5,""
-14,"Isso é fantástico!",5,""
-15,"Todos estão muito animados com o resultado.",5,""
-16,"","56","\public\video\sad.mp4"
-17,"Dói no coração ver uma criança precisando pedir ajuda na rua.",56,""
-18,"Ninguém deveria crescer sem ter o básico garantido.",56,""
-19,"É triste precisar depender da bondade alheia pra sobreviver.",56,""
-20,"","55","\public\video\happy2.mp4"
-21,"Ver essa menina de uniforme me deixou sem palavras.",55,""
-22,"Pequenos gestos podem mudar a história de uma vida inteira.",55,""
-23,"Que emoção saber que ela agora tem um futuro pela frente.",55,""
-24,"","105","\public\video\motivacional2.mp4"
-25,"Isso mostra o poder que temos de transformar nossas vidas.",105,""
-26,"Quando nos dedicamos, conseguimos alcançar qualquer objetivo.",105,""
-27,"Nenhuma conquista grande vem sem sacrifício.",105,""
+id,text,blockId,videoSrc,audioSize
+1,"O gato subiu no telhado.",2,"",p
+2,"Que horas são agora?",2,"",p
+3,"A reunião foi adiada para a próxima semana.",2,"",m
+4,"Preciso comprar pão e leite no mercado.",2,"",m
+5,"O filme começou às oito da noite.",2,"",m
+6,"Ela trabalha em um escritório de advocacia.",2,"",m
+7,"A importância da educação para o desenvolvimento social e econômico de uma nação é inegável.",2,"",g
+8,"Os pesquisadores concluíram que a vacina experimental demonstrou resultados promissores na prevenção de novas infecções.",2,"",g
+9,"Você gostaria de café ou chá?",2,"",p
+10,"O trânsito estava congestionado por causa de um acidente na rodovia.",2,"",g
+11,"Hoje o clima está muito agradável.",2,"",p
+12,"Ele esqueceu as chaves dentro do carro.",2,"",m
+13,"A aula foi bastante produtiva.",2,"",p
+14,"Estamos planejando uma viagem para o litoral.",2,"",m
+15,"O cachorro latiu a noite inteira.",2,"",p
+16,"A comida estava deliciosa.",2,"",p
+17,"Ela terminou o trabalho antes do prazo.",2,"",m
+18,"O computador travou novamente.",2,"",p
+19,"Precisamos organizar melhor nosso tempo.",2,"",m
+20,"O livro que estou lendo é muito interessante.",2,"",m
+
+21,"Ele abriu a janela lentamente.",2,"",p
+22,"Vamos sair mais cedo hoje?",2,"",p
+23,"A empresa anunciou mudanças importantes na estratégia para os próximos anos.",2,"",g
+24,"O sistema apresentou falhas durante a execução do processo.",2,"",g
+25,"Precisamos revisar os dados antes da apresentação final.",2,"",m
+26,"O relatório foi enviado para análise.",2,"",m
+27,"A conexão caiu novamente.",2,"",p
+28,"Isso pode causar problemas.",2,"",p
+29,"Estamos melhorando continuamente nossos processos internos.",2,"",g
+30,"A equipe discutiu soluções inovadoras para o problema.",2,"",g
+
+31,"Que notícia incrível!",5,"",p
+32,"Vamos começar o projeto agora mesmo!",5,"",m
+33,"Você não vai acreditar no que aconteceu.",5,"",m
+34,"Isso é fantástico!",5,"",p
+35,"Todos estão muito animados com o resultado.",5,"",m
+36,"Que surpresa maravilhosa!",5,"",p
+37,"Isso superou todas as expectativas!",5,"",m
+38,"Estou muito feliz com essa conquista.",5,"",m
+39,"Que momento inesquecível!",5,"",p
+40,"É uma oportunidade incrível!",5,"",p
+
+41,"Mal posso esperar para começar!",5,"",m
+42,"Isso é simplesmente sensacional!",5,"",m
+43,"Que conquista impressionante!",5,"",p
+44,"Estamos comemorando essa vitória!",5,"",m
+45,"Nada pode nos parar agora!",5,"",p
+46,"Que energia incrível!",5,"",p
+47,"Estamos vivendo um momento histórico.",5,"",m
+48,"Essa conquista representa anos de esforço coletivo.",5,"",g
+49,"O resultado final foi extremamente positivo para todos.",5,"",g
+50,"A equipe inteira está celebrando esse grande marco.",5,"",g
+
+51,"","56","\public\video\sad.mp4",p
+52,"Dói no coração ver uma criança precisando pedir ajuda na rua.",56,"",g
+53,"Ninguém deveria crescer sem ter o básico garantido.",56,"",g
+54,"É triste precisar depender da bondade alheia pra sobreviver.",56,"",g
+55,"A desigualdade social ainda é muito presente.",56,"",m
+56,"Muitas famílias enfrentam dificuldades diariamente.",56,"",m
+57,"É difícil ver tanta injustiça no mundo.",56,"",m
+58,"A falta de oportunidades muda destinos.",56,"",m
+59,"Isso parte o coração de qualquer pessoa.",56,"",m
+60,"A realidade de muitos ainda é muito dura.",56,"",m
+
+61,"Precisamos de mais empatia na sociedade.",56,"",m
+62,"Cada história dessas carrega muita dor.",56,"",m
+63,"É impossível não se emocionar com isso.",56,"",m
+64,"A fome ainda é uma realidade cruel para muitas pessoas em diversas regiões.",56,"",g
+65,"A ausência de políticas públicas agrava ainda mais essa situação delicada.",56,"",g
+66,"Isso machuca profundamente.",56,"",p
+67,"É muito triste.",56,"",p
+68,"Não podemos ignorar essa realidade.",56,"",m
+69,"Essa situação exige atenção urgente.",56,"",m
+70,"O sofrimento dessas pessoas precisa ser visto.",56,"",g
+
+71,"","55","\public\video\happy2.mp4",p
+72,"Ver essa menina de uniforme me deixou sem palavras.",55,"",g
+73,"Pequenos gestos podem mudar a história de uma vida inteira.",55,"",g
+74,"Que emoção saber que ela agora tem um futuro pela frente.",55,"",g
+75,"Isso enche o coração de alegria.",55,"",m
+76,"Momentos assim fazem tudo valer a pena.",55,"",m
+77,"É lindo ver sonhos se tornando realidade.",55,"",m
+78,"A felicidade dela é contagiante.",55,"",m
+79,"Histórias assim inspiram qualquer pessoa.",55,"",m
+80,"É gratificante ver mudanças positivas.",55,"",m
+
+81,"O sorriso dela diz tudo.",55,"",p
+82,"Esse é o tipo de notícia que precisamos.",55,"",m
+83,"É impossível não se emocionar com isso.",55,"",m
+84,"Que alegria!",55,"",p
+85,"Isso é lindo.",55,"",p
+86,"A transformação na vida dela mostra o impacto de pequenas ações feitas com amor.",55,"",g
+87,"Esse tipo de história reforça a importância da solidariedade em nossa sociedade.",55,"",g
+88,"Todos merecem oportunidades como essa.",55,"",m
+89,"Isso traz esperança.",55,"",p
+90,"Momentos assim mudam tudo.",55,"",m
+
+91,"","105","\public\video\motivacional2.mp4",p
+92,"Isso mostra o poder que temos de transformar nossas vidas.",105,"",g
+93,"Quando nos dedicamos, conseguimos alcançar qualquer objetivo.",105,"",g
+94,"Nenhuma conquista grande vem sem sacrifício.",105,"",m
+95,"O esforço de hoje é a vitória de amanhã.",105,"",m
+96,"A persistência é o caminho do sucesso.",105,"",m
+97,"Nunca é tarde para recomeçar.",105,"",p
+98,"Acredite no seu potencial.",105,"",p
+99,"Grandes mudanças começam com pequenas atitudes.",105,"",m
+100,"Você é capaz de ir além.",105,"",p
+101,"Cada desafio é uma oportunidade de crescimento.",105,"",m
+
+102,"O sucesso depende da sua determinação.",105,"",m
+103,"Continue mesmo quando for difícil.",105,"",m
+104,"Não desista.",105,"",p
+105,"Você consegue.",105,"",p
+106,"A disciplina diária constrói resultados extraordinários ao longo do tempo.",105,"",g
+107,"O foco consistente é o principal fator para atingir objetivos de longo prazo.",105,"",g
+108,"Cada passo importa.",105,"",p
+109,"Persistir é essencial.",105,"",p
+110,"A jornada é tão importante quanto o destino.",105,"",m
+111,"Grandes resultados exigem constância.",105,"",m

@@ -14,8 +14,9 @@ import RoomToneScreen from '../components/RoomToneScreen';
 import { useAuth } from '../contexts/AuthContext';
 import { api, SessionResponse } from '../services/api';
 import { findByFrontendId, findByBackendId } from '../datasets';
+import { DatasetOrchestrator, OrchestratorConfig, Phrase as OrchestratorPhrase } from '../services/orchestrator';
 
-interface Phrase { id: number; text: string; blockId: number; videoSrc?: string; }
+interface Phrase extends OrchestratorPhrase { }
 interface Block { blockId: number; name: string; emocao: number; isSpontaneous: boolean; }
 
 const modalStyle = { position: 'absolute' as 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 400, bgcolor: 'background.paper', border: '2px solid #000', boxShadow: 24, p: 4 };
@@ -163,6 +164,7 @@ const RecordingPage: React.FC = () => {
   const { setActiveSessionInfo } = useAuth();
   
   const [phrases, setPhrases] = useState<Phrase[]>([]);
+  const [orchestrator, setOrchestrator] = useState<DatasetOrchestrator | null>(null);
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentPhraseIndex, setCurrentPhraseIndex] = useState(0);
@@ -171,6 +173,9 @@ const RecordingPage: React.FC = () => {
   const [showExistingSessionModal, setShowExistingSessionModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
+  const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
+  const [showPackageModal, setShowPackageModal] = useState(false);
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [finalizationStep, setFinalizationStep] = useState<'idle' | 'preRoomTone' | 'roomTone' | 'notes'>('idle');
   const [sessionNotes, setSessionNotes] = useState('');
@@ -187,6 +192,8 @@ const RecordingPage: React.FC = () => {
   const MAX_RETRIES = 1;
   const [uploadError, setUploadError] = useState<Error | null>(null);
   const [audioForRetry, setAudioForRetry] = useState<{ blob: Blob, isRoomTone: boolean, blockId?: number, roomToneType?: 'start' | 'end' } | null>(null);
+
+  const [skipCount, setSkipCount] = useState(0);
 
   const [preRecordingStep, setPreRecordingStep] = useState<'voiceCheck' | 'voiceSample' | 'roomTone' | 'recording' | 'idle'>('idle'); 
   const [finalRoomToneCountdown, setFinalRoomToneCountdown] = useState<number | null>(null);
@@ -290,6 +297,40 @@ const RecordingPage: React.FC = () => {
 
     draw();
   }, [setDbfs]);
+  const startMicWarmup = useCallback(async () => {
+    try {
+      if (streamRef.current && streamRef.current.active) return;
+
+      const savedMicId = localStorage.getItem('selectedMicId');
+      const audioConstraints = savedMicId ? { deviceId: { exact: savedMicId } } : true;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+      streamRef.current = stream;
+      
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      const audioContext = audioContextRef.current;
+      if (audioContext.state === 'suspended') await audioContext.resume();
+
+      if (!analyserRef.current) {
+        analyserRef.current = audioContext.createAnalyser();
+        analyserRef.current.fftSize = 2048;
+      }
+      
+      if (sourceRef.current) {
+         try { sourceRef.current.disconnect(); } catch(e) {}
+      }
+      
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyserRef.current);
+      sourceRef.current = source;
+      
+      visualize();
+    } catch (err) {
+      console.error("Mic warmup failed:", err);
+    }
+  }, [visualize]);
+
   // Substitua sua função stopRecording por esta:
   const stopRecording = useCallback((cleanupStream = true, onBlobAvailable?: (blob: Blob) => void) => {
       // 1. Para o MediaRecorder e MATA a referência
@@ -321,13 +362,13 @@ const RecordingPage: React.FC = () => {
       }
       
       // 3. Desconecta o Source
-      if (sourceRef.current) {
+      if (cleanupStream && sourceRef.current) {
         try { sourceRef.current.disconnect(); } catch(e) {}
         sourceRef.current = null;
       }
 
       // 4. Limpeza de Timers e Animações
-      if (animationFrameId.current) {
+      if (cleanupStream && animationFrameId.current) {
         cancelAnimationFrame(animationFrameId.current);
         animationFrameId.current = null;
       }
@@ -362,15 +403,16 @@ const RecordingPage: React.FC = () => {
     }
 
     try {
-      // Limpeza de segurança
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
+      // Limpeza de segurança se não houver stream ativo
+      if (!streamRef.current || !streamRef.current.active) {
+        const savedMicId = localStorage.getItem('selectedMicId');
+        const audioConstraints = savedMicId ? { deviceId: { exact: savedMicId } } : true;
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+        streamRef.current = stream;
       }
+      
+      const stream = streamRef.current;
 
-      const savedMicId = localStorage.getItem('selectedMicId');
-      const audioConstraints = savedMicId ? { deviceId: { exact: savedMicId } } : true;
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
-      streamRef.current = stream;
       // Audio Context Singleton
       if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -387,14 +429,12 @@ const RecordingPage: React.FC = () => {
         analyserRef.current.fftSize = 2048;
       }
       
-      // Source
-      if (sourceRef.current) {
-         try { sourceRef.current.disconnect(); } catch(e) {}
+      // Source - Só reconecta se necessário
+      if (!sourceRef.current) {
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyserRef.current);
+        sourceRef.current = source;
       }
-      
-      const source = audioContext.createMediaStreamSource(stream);
-      source.connect(analyserRef.current);
-      sourceRef.current = source;
 
       // Recorder
       const recorder = new MediaRecorder(stream);
@@ -415,7 +455,6 @@ const RecordingPage: React.FC = () => {
     } catch (err) {
       console.error("Erro start:", err);
       stopRecording(true);
-      // Opcional: Tentar novamente em 1s se falhar
     }
   }, [visualize, stopRecording]);
 
@@ -536,13 +575,30 @@ const RecordingPage: React.FC = () => {
   
 
   useEffect(() => {
+    if (session && !selectedPackage && !showExistingSessionModal) {
+      setShowPackageModal(true);
+    }
+  }, [session, selectedPackage, showExistingSessionModal]);
+
+  useEffect(() => {
     const fetchCsvData = async () => {
-      if (!session) return;
+      if (!session || !selectedPackage) return;
       const datasetInfo = findByBackendId(session.dataset_id);
       if (!datasetInfo) return;
 
       setIsLoading(true);
       try {
+        // 1. Fetch Config
+        const configResponse = await fetch(`${window.location.origin}/datasets_config.json`);
+        if (!configResponse.ok) throw new Error("Failed to load datasets_config.json");
+        const configData: OrchestratorConfig = await configResponse.json();
+        
+        // Find dataset config by slug or frontendId mapping
+        // For now, mapping dataset_id 1 to "voz_geral"
+        const datasetKey = datasetInfo.backendId === 1 ? 'voz_geral' : 'voz_geral';
+        const datasetConfig = configData.datasets[datasetKey];
+
+        // 2. Fetch CSV
         const fetchUrl = `${window.location.origin}/${datasetInfo.csvFile}`;
         console.log("Fetching CSV from:", fetchUrl);
         const response = await fetch(fetchUrl);
@@ -551,61 +607,59 @@ const RecordingPage: React.FC = () => {
         const lines = text.trim().split('\n').slice(1);
         const normalizeMediaPath = (path?: string) => {
           if (!path) return "";
-          
-          // 1. Limpeza básica e normalização de barras
           let normalized = path.replace(/\\/g, "/").trim();
-
-          // 2. SEGURANÇA: Bloquear URLs absolutas (http, https, //) para evitar SSRF/Tracking
-          if (/^(https?:)?\/\//i.test(normalized)) {
-            console.warn("Segurança: Tentativa de carregar vídeo externo bloqueada:", normalized);
-            return "";
-          }
-
-          // 3. SEGURANÇA: Bloquear Path Traversal (tentativa de subir pastas com ../)
-          if (normalized.includes("..")) {
-            console.warn("Segurança: Tentativa de Path Traversal detectada:", normalized);
-            return "";
-          }
-
-          // 4. Garantir que o caminho comece com /video/
+          if (/^(https?:)?\/\//i.test(normalized)) return "";
+          if (normalized.includes("..")) return "";
           const videoFolderIndex = normalized.toLowerCase().indexOf('/video/');
           if (videoFolderIndex !== -1) {
               normalized = normalized.substring(videoFolderIndex);
           } else {
-              // Se não tiver /video/, mas for um nome de arquivo, assume que está na pasta de vídeos
-              if (!normalized.startsWith("/")) {
-                  normalized = "/video/" + normalized;
-              } else if (!normalized.startsWith("/video/")) {
-                  normalized = "/video" + normalized;
-              }
+              if (!normalized.startsWith("/")) normalized = "/video/" + normalized;
+              else if (!normalized.startsWith("/video/")) normalized = "/video" + normalized;
           }
-          
           return normalized;
         };
 
-        const data: Phrase[] = lines.map(line => {
+        const allPhrases: Phrase[] = lines.map(line => {
           const regex = /(?<=,|^)(?:"[^"]*"|[^,]*)/g;
           const matches = line.match(regex) || [];
-          const [id, phraseText, blockId, videoSrc] = matches.map(field => field.replace(/"/g, ''));
+          const [id, phraseText, blockId, videoSrc, audioSize] = matches.map(field => field.replace(/"/g, ''));
           return {
             id: parseInt(id),
             text: phraseText,
             blockId: parseInt(blockId),
-            videoSrc: normalizeMediaPath(videoSrc)
+            videoSrc: normalizeMediaPath(videoSrc),
+            audioSize: (audioSize || 'p').toLowerCase()
           };
         });
-        setPhrases(data);
-        if (data.length === 0) {
+
+        // 3. Initialize Orchestrator
+        const newOrchestrator = new DatasetOrchestrator(datasetConfig, allPhrases, selectedPackage);
+        setOrchestrator(newOrchestrator);
+
+        const sessionPhrases = newOrchestrator.generateSessionPhrases();
+        setPhrases(sessionPhrases);
+        
+        // 4. Set starting index from resume
+        if (location.state?.sessionToResume) {
+          // Ajuste: se a API retornar numero_frase > 0, usamos para o index
+          setCurrentPhraseIndex(Math.max(0, session.numero_frase));
+        } else {
+          setCurrentPhraseIndex(0);
+        }
+
+        if (sessionPhrases.length === 0) {
           setShowNoPhrasesModal(true);
         }
       } catch (error) {
-        console.error("Failed to load CSV:", error);
+        console.error("Failed to load CSV/Config:", error);
+        setError("Erro ao carregar dados do dataset. Verifique sua conexão.");
       } finally {
         setIsLoading(false);
       }
     };
     fetchCsvData();
-  }, [session]);
+  }, [session?.id, selectedPackage]);
 
   useEffect(() => {
     if (shouldAutoStartRef.current && !isLoading && phrases.length > 0 && preRecordingStep === 'recording') {
@@ -786,63 +840,67 @@ const RecordingPage: React.FC = () => {
   };
 
   const advanceToNextPhrase = useCallback(async () => {
-    if (!session) return;
-    
+    if (!session || !orchestrator) return;
+
     try {
       setIsUIPaused(true); 
-      
-      // 1. Matar a gravação anterior brutalmente
-      stopRecording(true); 
+      stopRecording(false); // Mantém o stream vivo para a próxima frase
       resetRecordingState();
-      setIsUIPaused(true); // Manter pausado durante a transição
+      setIsUIPaused(true); 
       
+      setSkipCount(0);
+
       const nextPhraseIndex = currentPhraseIndex + 1;
-      
-      if (nextPhraseIndex < phrases.length) {
-        // Salva no banco (sem await para não travar UI)
-        const updatedSession = { ...session, numero_frase: nextPhraseIndex };
-        api.put(`/sessions/${session.id}`, updatedSession).catch(e => console.error(e));
-        setSession(updatedSession);
-        
-        const currentBlockId = phrases[currentPhraseIndex].blockId;
-        const nextBlockId = phrases[nextPhraseIndex].blockId;
-        const isCurrentVideo = isVideoPhrase(currentPhraseIndex);
-        const isNextVideo = isVideoPhrase(nextPhraseIndex);
-        
-        setCurrentPhraseIndex(nextPhraseIndex);
 
-        const isBlockChange = currentBlockId !== nextBlockId;
-        const shouldShowTutorial = (isBlockChange && !isNextVideo) || (isCurrentVideo && !isNextVideo && !isBlockChange);
-
-        if (shouldShowTutorial) {
-          // Mudança de bloco (ou transição de vídeo): Configura tutorial e NÃO inicia gravação
-          const tutorial = getBlockTutorial(nextBlockId, blocks);
-          setBlockTutorialContent(tutorial);
-          setIsTutorialAudioFinished(false);
-          setIsTutorialAudioMuted(false);
-          setTutorialAudioRemaining(null);
-          setIsEntendiEarlyEnabled(false);
-          setShowBlockTutorialModal(true);
-          // Gravação será iniciada no fechamento do modal
-        } else {
-          // Mesma bloco ou próximo é vídeo: inicia quase imediatamente (já houve contagem)
-          setTimeout(() => {
-              setIsUIPaused(false);
-              startPhraseFlow(nextPhraseIndex);
-          }, 500); 
-        }
-      } else {
-        stopRecording(true);
+      if (nextPhraseIndex >= phrases.length) {
+        stopRecording(true); // Fim da sessão, agora sim fecha o stream
         resetRecordingState();
         setFinalizationStep('preRoomTone');
+        return;
+      }
+
+      const updatedSession = { ...session, numero_frase: session.numero_frase + 1 };
+      api.put(`/sessions/${session.id}`, updatedSession).catch(e => console.error(e));
+      setSession(updatedSession);
+
+      const currentPhraseObj = phrases[currentPhraseIndex];
+      const nextPhraseObj = phrases[nextPhraseIndex];
+
+      const currentBlockId = currentPhraseObj.blockId;
+      const nextBlockId = nextPhraseObj.blockId;
+
+      const isCurrentVideo = typeof currentPhraseObj.videoSrc === 'string' && currentPhraseObj.videoSrc.trim().length > 0;
+      const isNextVideo = typeof nextPhraseObj.videoSrc === 'string' && nextPhraseObj.videoSrc.trim().length > 0;
+
+      setCurrentPhraseIndex(nextPhraseIndex);
+
+      const isBlockChange = currentBlockId !== nextBlockId;
+      const shouldShowTutorial = (isBlockChange && !isNextVideo) || (isCurrentVideo && !isNextVideo && !isBlockChange);
+
+      if (shouldShowTutorial) {
+        const tutorial = getBlockTutorial(nextBlockId, blocks);
+        setBlockTutorialContent(tutorial);
+        setIsTutorialAudioFinished(false);
+        setIsTutorialAudioMuted(false);
+        setTutorialAudioRemaining(null);
+        setIsEntendiEarlyEnabled(false);
+        setShowBlockTutorialModal(true);
+      } else {
+        setTimeout(() => {
+            setIsUIPaused(false);
+            if (isNextVideo) {
+              if (videoRef.current) videoRef.current.play().catch(e => console.error(e));
+            } else {
+              startRecording();
+            }
+        }, 500); 
       }
     } catch (error) {
         console.error("Erro ao avançar:", error);
     } finally {
         setIsProcessing(false);
       }
-  }, [session, currentPhraseIndex, phrases, stopRecording, resetRecordingState, startPhraseFlow]);
-
+  }, [session, orchestrator, currentPhraseIndex, phrases, stopRecording, resetRecordingState, blocks, startRecording]);
   const sendAudioData = useCallback(async (audioBlob: Blob, is_room_tone = false, blockId?: number, room_tone_type?: 'start' | 'end') => {
     if (!session) return;
 
@@ -1021,7 +1079,38 @@ const RecordingPage: React.FC = () => {
   }, [finalizationStep, startRecording, stopRecording, sendAudioData]);
   
   const handleNextPhrase = useCallback(() => processPhraseChange(false), [processPhraseChange]);
-  const handleSkipPhrase = useCallback(() => processPhraseChange(true), [processPhraseChange]);
+  
+  const handleSkipPhrase = useCallback(() => {
+    if (!session || !orchestrator) return;
+    
+    setIsUIPaused(true);
+    stopRecording(true);
+    resetRecordingState();
+
+    if (skipCount >= 2) {
+      setSkipCount(0);
+      advanceToNextPhrase();
+    } else {
+      setSkipCount(prev => prev + 1);
+      const currentPhraseObj = phrases[currentPhraseIndex];
+      // Tenta repor a frase com outra do MESMO bloco e do mesmo tamanho
+      const replacement = orchestrator.getReplacementPhrase(currentPhraseObj.blockId, currentPhraseObj.audioSize);
+      
+      if (replacement) {
+        const newPhrases = [...phrases];
+        newPhrases[currentPhraseIndex] = replacement;
+        setPhrases(newPhrases);
+        
+        setTimeout(() => {
+          setIsUIPaused(false);
+          startPhraseFlow(currentPhraseIndex);
+        }, 500);
+      } else {
+        setSkipCount(0);
+        advanceToNextPhrase();
+      }
+    }
+  }, [session, orchestrator, skipCount, phrases, currentPhraseIndex, stopRecording, resetRecordingState, advanceToNextPhrase, startPhraseFlow]);
 
   const handleNextVideoPhrase = useCallback(() => {
     resetRecordingState();
@@ -1167,8 +1256,10 @@ const RecordingPage: React.FC = () => {
     }
   };
 
-  const totalPhrases = phrases.length;
-  const progressValue = totalPhrases > 0 ? ((currentPhraseIndex + 1) / totalPhrases) * 100 : 0;
+  const progress = orchestrator ? orchestrator.getProgress(currentPhraseIndex) : { total: 0, recorded: 0, percentage: 0 };
+  const totalPhrases = progress.total;
+  const currentPhraseNum = currentPhraseIndex + 1;
+  const progressValue = progress.percentage;
   const currentPhrase = phrases[currentPhraseIndex];
   const formatTime = (time: number) => `${Math.floor(time / 60)}:${(time % 60).toString().padStart(2, '0')}`;
   const formatTotalTime = (time: number) => {
@@ -1237,6 +1328,10 @@ const RecordingPage: React.FC = () => {
     // For the initial room tone, we can assume blockId 1
     sendAudioData(audioBlob, true, 1, 'start'); 
     setPreRecordingStep('recording'); // Força a transição para a tela de gravação
+    
+    // Warm up the mic for immediate waveform display
+    startMicWarmup();
+
     if (currentPhraseIndex === 0) {
       setIsUIPaused(true); // Pausa a nova tela para mostrar o tutorial
       setTutorialStep(0);
@@ -1247,6 +1342,15 @@ const RecordingPage: React.FC = () => {
     handleRoomToneUpload(blob);
   };
   
+  const getPackageName = (pkg: string | null) => {
+    switch (pkg) {
+      case '10M': return '10 minutos';
+      case '30M': return '30 minutos';
+      case '1H': return '1 hora';
+      default: return '';
+    }
+  };
+
   if (isLoading && !showExistingSessionModal) {
     return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}><CircularProgress /></Box>;
   }
@@ -1296,6 +1400,27 @@ const RecordingPage: React.FC = () => {
           </Box>
         </Box>
       </Modal>
+
+      <Modal open={showPackageModal && !showExistingSessionModal}>
+        <Box sx={{ ...modalStyle, textAlign: 'center' }}>
+          <Typography variant="h6" gutterBottom>Escolha o tamanho do pacote</Typography>
+          <Typography variant="body2" sx={{ mb: 3 }}>
+            O tamanho define quantas frases você irá gravar nesta sessão.
+          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Button variant="contained" onClick={() => { setSelectedPackage('10M'); setShowPackageModal(false); }}>
+              10 minutos (~20 frases)
+            </Button>
+            <Button variant="contained" onClick={() => { setSelectedPackage('30M'); setShowPackageModal(false); }}>
+              30 minutos (~30 frases)
+            </Button>
+            <Button variant="contained" onClick={() => { setSelectedPackage('1H'); setShowPackageModal(false); }}>
+              1 hora (~50 frases)
+            </Button>
+          </Box>
+        </Box>
+      </Modal>
+
       <Modal open={isCancelModalOpen} onClose={() => setIsCancelModalOpen(false)}>
         <Box sx={modalStyle}>
           <Typography variant="h6">Cancelar Sessão</Typography>
@@ -1320,7 +1445,7 @@ const RecordingPage: React.FC = () => {
           {isTutorialActive && <TutorialTooltip {...tooltipConfig} onNext={handleNextTutorialStep} />}
           <Box sx={{ filter: isTutorialActive ? 'brightness(0.7)' : 'none', pointerEvents: isTutorialActive ? 'none' : 'auto' }}>
             <Typography variant="h3" component="h1" textAlign="center" sx={{ mt: 4, mb: 2 }}>
-                Gravação de Fala ({datasetId ? findByFrontendId(parseInt(datasetId, 10))?.name : ''})
+                Gravação de Fala ({datasetId ? findByFrontendId(parseInt(datasetId, 10))?.name : ''}{selectedPackage ? ` - ${getPackageName(selectedPackage)}` : ''})
             </Typography>
 
             {phrases.length > 0 && currentPhrase ? (
@@ -1328,7 +1453,7 @@ const RecordingPage: React.FC = () => {
                 <Box sx={{ width: '100%', mb: 2 }}>
                   <LinearProgress variant="determinate" value={progressValue} />
                   <Box display="flex" justifyContent="space-between" mt={1}>
-                    <Typography variant="body2" color="text.secondary">{`${currentPhraseIndex + 1} de ${totalPhrases} frases`}</Typography>
+                    <Typography variant="body2" color="text.secondary">{`${currentPhraseNum} de ${totalPhrases} frases`}</Typography>
                     <Typography variant="body2" color="primary" fontWeight="bold">Tempo acumulado: {formatTotalTime(totalRecordedTime)}</Typography>
                   </Box>
                 </Box>

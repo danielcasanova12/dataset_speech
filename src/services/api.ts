@@ -19,7 +19,7 @@ const getHeaders = (contentType: string | null = 'application/json') => {
 };
 
 // Wrapper para fetch para centralizar segurança e credenciais com lógica de retry e timeout
-const secureFetch = async (url: string, options: RequestInit = {}, retries = 3, backoff = 1000) => {
+const secureFetch = async (url: string, options: RequestInit = {}, retries = 3, backoff = 1000): Promise<Response> => {
   const timeout = 15000; // 15 segundos de timeout por tentativa
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
