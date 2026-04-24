@@ -106,22 +106,30 @@ export class DatasetOrchestrator {
     return sessionPhrases;
   }
 
-  // Retira uma frase do balde correto ou tenta um fallback se esgotar
+  // Retira uma frase do balde correto ou tenta um fallback circular se esgotar
   private getPhraseFromBucket(blockId: number, size: string): Phrase | null {
     const b = this.buckets[blockId];
     if (!b) return null;
 
-    if (b[size] && b[size].length > 0) {
-      return b[size].shift() || null;
+    // Ordem de prioridade para o fallback:
+    // Se pede 'g': tenta 'g', depois 'm', depois 'p'
+    // Se pede 'm': tenta 'm', depois 'p', depois 'g'
+    // Se pede 'p': tenta 'p', depois 'm', depois 'g'
+    const fallbackOrder: Record<string, string[]> = {
+      "g": ["g", "m", "p"],
+      "m": ["m", "p", "g"],
+      "p": ["p", "m", "g"]
+    };
+
+    const order = fallbackOrder[size];
+    if (!order) return null;
+
+    for (const currentSize of order) {
+      if (b[currentSize] && b[currentSize].length > 0) {
+        return b[currentSize].shift() || null;
+      }
     }
 
-    // Estratégia de Fallback: Se faltar 'G' puxa 'M', se faltar 'M' puxa 'P'
-    const fallbacks: Record<string, string | null> = { "g": "m", "m": "p", "p": null };
-    const nextSize = fallbacks[size];
-    
-    if (nextSize) {
-      return this.getPhraseFromBucket(blockId, nextSize);
-    }
     return null;
   }
 
