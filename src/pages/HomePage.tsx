@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Button, Typography, Container, Box, CircularProgress, Grid, IconButton, Modal, Alert, AlertTitle } from '@mui/material';
+import { Button, Typography, Container, Box, CircularProgress, Grid, IconButton, Modal, Alert, AlertTitle, Tabs, Tab } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -8,12 +8,18 @@ import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
 import { DATASETS } from '../datasets';
 import MicTester from '../components/MicTester';
+import MusicManager from '../components/MusicManager';
 
 const HomePage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [hasMic, setHasMic] = useState(true); // Default to true until checked
+  const [tabValue, setTabValue] = useState(0);
   const { isAuthenticated, logout } = useAuth();
   const { mode, toggleTheme } = useTheme();
+
+  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    setTabValue(newValue);
+  };
   
   // Limpa a sessão legada ao carregar a página para evitar conflitos
   useEffect(() => {
@@ -65,35 +71,53 @@ const HomePage: React.FC = () => {
         </Typography>
 
         {isAuthenticated ? (
-            <>
-                <MicTester onMicStatusChange={setHasMic} />
-                <Typography variant="h5" component="h2" sx={{ mb: 4 }}>
-                Selecione o Dataset
-                </Typography>
-                {isLoading ? (
-                <CircularProgress />
-                ) : (
-                <Grid container spacing={2} justifyContent="center" sx={{ mb: 4 }}>
-                    {DATASETS.map(dataset => (
-                    <Grid item key={dataset.frontendId}>
-                        <Button
-                        variant="contained"
-                        color="primary"
-                        component={hasMic ? Link : "button"}
-                        to={hasMic ? `/recording/${dataset.frontendId}` : undefined}
-                        size="large"
-                        disabled={!hasMic}
-                        >
-                        {dataset.name}
-                        </Button>
-                    </Grid>
-                    ))}
-                </Grid>
+            <Box sx={{ width: '100%' }}>
+                <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+                    <Tabs value={tabValue} onChange={handleTabChange} centered>
+                        <Tab label="Voz Geral" />
+                        <Tab label="Música" />
+                    </Tabs>
+                </Box>
+
+                {tabValue === 0 && (
+                    <Box display="flex" flexDirection="column" alignItems="center">
+                        <MicTester onMicStatusChange={setHasMic} />
+                        <Typography variant="h5" component="h2" sx={{ mb: 4 }}>
+                        Selecione o Dataset
+                        </Typography>
+                        {isLoading ? (
+                        <CircularProgress />
+                        ) : (
+                        <Grid container spacing={2} justifyContent="center" sx={{ mb: 4 }}>
+                            {DATASETS.map(dataset => (
+                            <Grid item key={dataset.frontendId}>
+                                <Button
+                                variant="contained"
+                                color="primary"
+                                component={hasMic ? Link : "button"}
+                                to={hasMic ? `/recording/${dataset.frontendId}` : undefined}
+                                size="large"
+                                disabled={!hasMic}
+                                >
+                                {dataset.name}
+                                </Button>
+                            </Grid>
+                            ))}
+                        </Grid>
+                        )}
+                    </Box>
                 )}
-                <Button variant="outlined" color="error" onClick={logout}>
-                    Sair
-                </Button>
-            </>
+
+                {tabValue === 1 && (
+                    <MusicManager />
+                )}
+
+                <Box mt={4} display="flex" justifyContent="center">
+                    <Button variant="outlined" color="error" onClick={logout}>
+                        Sair
+                    </Button>
+                </Box>
+            </Box>
         ) : (
             <Box>
                  <Typography variant="h6" sx={{ mb: 3 }}>
