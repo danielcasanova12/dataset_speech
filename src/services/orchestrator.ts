@@ -27,6 +27,8 @@ export interface Phrase {
   blockId: number;
   videoSrc?: string;
   audioSize: string;
+  step_type?: 'music' | 'spoken';
+  background_audio_url?: string;
 }
 
 export class DatasetOrchestrator {
