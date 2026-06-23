@@ -36,7 +36,7 @@ function App() {
 
             <Route element={<PrivateRoute />}>
               <Route path="/recording/:datasetId" element={<RecordingPage key={location.pathname} />} />
-              <Route path="/music-session" element={<MusicSessionPage />} />
+              <Route path="/music-session" element={<RecordingPage key="music-session" sessionType="music" />} />
             </Route>
           </Routes>
       </AuthProvider>

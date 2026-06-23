@@ -157,7 +157,11 @@ function audioBufferToWav(buffer: AudioBuffer): Blob {
   return new Blob([buffer_out], {type: "audio/wav"});
 }
 
-const RecordingPage: React.FC = () => {
+interface RecordingPageProps {
+  sessionType?: "general" | "music";
+}
+
+const RecordingPage: React.FC<RecordingPageProps> = ({ sessionType = "general" }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { datasetId } = useParams<{ datasetId: string }>();
@@ -219,6 +223,12 @@ const RecordingPage: React.FC = () => {
 
   const [videoFinished, setVideoFinished] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const backgroundAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [isPlayingMusic, setIsPlayingMusic] = useState(false); // eslint-disable-line @typescript-eslint/no-unused-vars
+
+  const isMusicStep = useCallback((index: number) => {
+    return sessionType === 'music' && phrases[index] && phrases[index].step_type === 'music';
+  }, [phrases, sessionType]);
 
   const isVideoPhrase = useCallback((index: number) => {
     const phrase = phrases?.[index];
@@ -1580,8 +1590,22 @@ const RecordingPage: React.FC = () => {
                         transition: 'all 0.3s ease'
                       }}
                     >
-                      {currentPhrase.text}
+                      {isMusicStep(currentPhraseIndex) ? '' : currentPhrase.text}
                     </Typography>
+
+                    {isMusicStep(currentPhraseIndex) && (
+                        <Box display="flex" flexDirection="column" alignItems="center">
+                          <HeadsetIcon sx={{ fontSize: 100, color: 'primary.main', mb: 2 }} />
+                          <Typography variant="h5">Ouvindo música: {currentPhrase.text}</Typography>
+                          <audio
+                            ref={backgroundAudioRef}
+                            src={currentPhrase.background_audio_url}
+                            onEnded={() => handleNextPhrase()}
+                            autoPlay
+                            style={{ display: 'none' }}
+                          />
+                        </Box>
+                    )}
 
                     <Box mt={4} display="flex" justifyContent="space-around">
                       <Button ref={skipButtonRef} variant="outlined" onClick={handleSkipPhrase} disabled={isProcessing || countdown !== null}>Pular Áudio</Button>
