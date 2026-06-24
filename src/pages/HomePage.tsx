@@ -88,6 +88,17 @@ const HomePage: React.FC = () => {
                         </Button>
                     </Grid>
                     ))}
+                    <Grid item>
+                        <Button
+                          variant="outlined"
+                          color="secondary"
+                          component={Link}
+                          to="/music-session"
+                          size="large"
+                        >
+                          Música
+                        </Button>
+                    </Grid>
                 </Grid>
                 )}
                 <Button variant="outlined" color="error" onClick={logout}>

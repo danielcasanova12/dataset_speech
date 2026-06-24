@@ -32,3 +32,5 @@ venv
 public/video/
 *.mp4
 *.md
+.env
+.firebase/hosting.YnVpbGQ.cache

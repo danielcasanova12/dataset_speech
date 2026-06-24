@@ -81,6 +81,32 @@ export interface SessionResponse {
   numero_frase: number;
 }
 
+export interface MusicListItem {
+  id: number;
+  nome: string;
+  genero: string;
+  bpm: number | null;
+  time_signature: string | null;
+  has_vocal_audio: boolean;
+  has_instrumental_audio: boolean;
+}
+
+export interface MusicDetails extends MusicListItem {
+  texto: string | null;
+  vocal_audio_url: string | null;
+  instrumental_audio_url: string | null;
+}
+
+export interface MusicUpsertPayload {
+  nome?: string;
+  genero?: string;
+  texto?: string;
+  bpm?: number | null;
+  time_signature?: string | null;
+  vocal_audio_file?: File | null;
+  instrumental_audio_file?: File | null;
+}
+
 export const api = {
   login: async (username: string, password: string): Promise<LoginResponse> => {
     const formData = new URLSearchParams();
@@ -116,21 +142,32 @@ export const api = {
     }
   },
 
-  createSession: async (dataset_id: number, termos: boolean): Promise<SessionResponse> => {
+  createSession: async (
+    dataset_id: number,
+    termos: boolean,
+    extra?: { session_type?: 'general' | 'music' }
+  ): Promise<SessionResponse> => {
     const response = await secureFetch(`${API_BASE_URL}/api/v1/sessions`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ dataset_id, termos }),
+      body: JSON.stringify({ dataset_id, termos, ...extra }),
     });
 
     if (!response.ok) {
         const errorData = await response.json();
+        const detail = errorData.detail;
         if (response.status === 409 && errorData.detail?.session) {
-            const error = new Error(errorData.detail.message) as any;
+            const error = new Error(detail?.message || 'An active session already exists for this user.') as any;
             error.session = errorData.detail.session;
             throw error;
         }
-        throw new Error(errorData.detail || 'Failed to create session');
+        if (typeof detail === 'string') {
+          throw new Error(detail);
+        }
+        if (detail && typeof detail === 'object') {
+          throw new Error(detail.message || detail.detail || 'Failed to create session');
+        }
+        throw new Error('Failed to create session');
     }
     return response.json();
   },
@@ -179,6 +216,92 @@ export const api = {
     return response.json();
   },
 
+  listMusics: async (genero?: string | null): Promise<MusicListItem[]> => {
+    const query = new URLSearchParams();
+    if (genero && genero.trim()) {
+      query.append('genero', genero.trim());
+    }
+
+    const querySuffix = query.toString() ? `?${query.toString()}` : '';
+    const response = await secureFetch(`${API_BASE_URL}/api/v1/musics${querySuffix}`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error('Não foi possível carregar a lista de músicas.');
+    }
+
+    return response.json();
+  },
+
+  getMusic: async (id: number): Promise<MusicDetails> => {
+    const response = await secureFetch(`${API_BASE_URL}/api/v1/musics/${id}`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Não foi possível carregar os detalhes da música ${id}.`);
+    }
+
+    return response.json();
+  },
+
+  createMusic: async (payload: MusicUpsertPayload): Promise<MusicDetails> => {
+    const formData = new FormData();
+
+    if (payload.nome !== undefined) formData.append('nome', payload.nome);
+    if (payload.genero !== undefined) formData.append('genero', payload.genero);
+    if (payload.texto !== undefined) formData.append('texto', payload.texto);
+    if (payload.bpm !== undefined && payload.bpm !== null) formData.append('bpm', String(payload.bpm));
+    if (payload.time_signature !== undefined && payload.time_signature !== null && payload.time_signature.trim()) {
+      formData.append('time_signature', payload.time_signature.trim());
+    }
+    if (payload.vocal_audio_file) formData.append('vocal_audio_file', payload.vocal_audio_file);
+    if (payload.instrumental_audio_file) formData.append('instrumental_audio_file', payload.instrumental_audio_file);
+
+    const response = await secureFetch(`${API_BASE_URL}/api/v1/musics`, {
+      method: 'POST',
+      headers: getHeaders(null),
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || 'Não foi possível cadastrar a música.');
+    }
+
+    return response.json();
+  },
+
+  updateMusic: async (id: number, payload: MusicUpsertPayload): Promise<MusicDetails> => {
+    const formData = new FormData();
+
+    if (payload.nome !== undefined) formData.append('nome', payload.nome);
+    if (payload.genero !== undefined) formData.append('genero', payload.genero);
+    if (payload.texto !== undefined) formData.append('texto', payload.texto);
+    if (payload.bpm !== undefined && payload.bpm !== null) formData.append('bpm', String(payload.bpm));
+    if (payload.time_signature !== undefined && payload.time_signature !== null && payload.time_signature.trim()) {
+      formData.append('time_signature', payload.time_signature.trim());
+    }
+    if (payload.vocal_audio_file) formData.append('vocal_audio_file', payload.vocal_audio_file);
+    if (payload.instrumental_audio_file) formData.append('instrumental_audio_file', payload.instrumental_audio_file);
+
+    const response = await secureFetch(`${API_BASE_URL}/api/v1/musics/${id}`, {
+      method: 'PATCH',
+      headers: getHeaders(null),
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Não foi possível atualizar a música ${id}.`);
+    }
+
+    return response.json();
+  },
+
   uploadRecording: async (
     sessionId: number,
     datasetId: number,
@@ -191,7 +314,10 @@ export const api = {
     phraseId?: number,
     frase_content?: string,
     room_tone_type?: 'start' | 'end',
-    audioId?: string
+    audioId?: string,
+    step_type?: 'music' | 'spoken',
+    background_audio_url?: string,
+    text_prompt?: string
   ): Promise<any> => {
     const formData = new FormData();
     formData.append('session_id', sessionId.toString());
@@ -209,6 +335,9 @@ export const api = {
 
     if (phraseId) formData.append('frase_id', phraseId.toString());
     if (frase_content) formData.append('frase_content', frase_content);
+    if (step_type) formData.append('step_type', step_type);
+    if (background_audio_url) formData.append('background_audio_url', background_audio_url);
+    if (text_prompt) formData.append('text_prompt', text_prompt);
 
     const response = await secureFetch(`${API_BASE_URL}/api/v1/recordings`, {
       method: 'POST',
