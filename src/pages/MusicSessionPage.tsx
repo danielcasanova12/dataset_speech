@@ -36,8 +36,10 @@ import { api, MusicDetails, MusicListItem, SessionResponse } from '../services/a
 type PhraseCategory = 'neutral' | 'emotional' | 'lyric';
 type MonitorMode = 'none' | 'vocal' | 'instrumental';
 type SessionPackageKey = 'short' | 'medium' | 'long';
-type SetupStage = 'package' | 'music';
+type SetupStage = 'package' | 'music' | 'review';
+type MusicButtonTutorialKey = 'phrase-controls' | 'listen-controls' | 'record-controls';
 type CountInOption = 0 | 1 | 2;
+type MusicSortOption = 'selected' | 'name' | 'genre' | 'recent';
 
 interface MusicSessionPackage {
   key: SessionPackageKey;
@@ -59,6 +61,7 @@ interface SetupFormState {
   selectedMusicIds: number[];
   searchTerm: string;
   genreFilter: string;
+  sortBy: MusicSortOption;
 }
 
 interface MetronomeConfig {
@@ -110,6 +113,8 @@ type SessionStep = PhraseStep | ListenStep | RecordStep;
 interface BlockMeta {
   blockId: number;
   name: string;
+  emotion: number;
+  isSpontaneous: boolean;
 }
 
 interface DatasetPhraseRow {
@@ -174,6 +179,7 @@ const createInitialSetup = (): SetupFormState => ({
   selectedMusicIds: [],
   searchTerm: '',
   genreFilter: '',
+  sortBy: 'selected',
 });
 
 const audioBufferToWav = (buffer: AudioBuffer): Blob => {
@@ -347,6 +353,60 @@ const formatPackageRule = (config: MusicSessionPackage): string => {
   return `${config.minSongs} a ${config.maxSongs} músicas`;
 };
 
+const getSetupStageItems = (currentStage: SetupStage) => ([
+  { step: '1', title: 'Tamanho', active: currentStage === 'package', done: currentStage !== 'package' },
+  { step: '2', title: 'Músicas', active: currentStage === 'music', done: currentStage === 'review' },
+  { step: '3', title: 'Revisar', active: currentStage === 'review', done: false },
+]);
+
+const getStepTheme = (step: SessionStep | null) => {
+  if (!step) {
+    return {
+      eyebrow: 'Preparando',
+      accent: '#1976d2',
+      surface: 'linear-gradient(135deg, rgba(25,118,210,0.16), rgba(25,118,210,0.04))',
+    };
+  }
+
+  if (step.type === 'listen') {
+    return {
+      eyebrow: 'Ouvir referência',
+      accent: '#1565c0',
+      surface: 'linear-gradient(135deg, rgba(21,101,192,0.16), rgba(21,101,192,0.04))',
+    };
+  }
+
+  if (step.type === 'record') {
+    return {
+      eyebrow: 'Gravar música',
+      accent: '#2e7d32',
+      surface: 'linear-gradient(135deg, rgba(46,125,50,0.16), rgba(46,125,50,0.04))',
+    };
+  }
+
+  if (step.category === 'emotional') {
+    return {
+      eyebrow: 'Frase emocional',
+      accent: '#ef6c00',
+      surface: 'linear-gradient(135deg, rgba(239,108,0,0.16), rgba(239,108,0,0.04))',
+    };
+  }
+
+  if (step.category === 'lyric') {
+    return {
+      eyebrow: 'Frase da música',
+      accent: '#6a1b9a',
+      surface: 'linear-gradient(135deg, rgba(106,27,154,0.16), rgba(106,27,154,0.04))',
+    };
+  }
+
+  return {
+    eyebrow: 'Frase neutra',
+    accent: '#00838f',
+    surface: 'linear-gradient(135deg, rgba(0,131,143,0.16), rgba(0,131,143,0.04))',
+  };
+};
+
 const createInitialMetronomeConfig = (music: MusicDetails | null): MetronomeConfig => ({
   enabled: false,
   bpm: music?.bpm ? String(music.bpm) : '',
@@ -437,8 +497,8 @@ const getMusicStepTutorial = (step: SessionStep): MusicStepTutorial => {
       title: `Gravar música: ${step.musicName || 'Música'}`,
       description: 'Agora você configura o que vai ouvir e inicia a gravação cantada.',
       tips: [
-        'Escolha o áudio de referência e, se quiser, ative o retorno da sua própria voz.',
-        'Ajuste o metrônomo apenas se precisar nesta música.',
+        '1. Em "O que você quer ouvir", escolha se vai cantar sem base, com a música original ou com o instrumental.',
+        '2. Em "Metrônomo opcional", ligue o clique só se ele realmente ajudar nesta gravação.',
         'Quando estiver pronto, clique no botão verde para começar a gravação.',
       ],
     };
@@ -482,6 +542,53 @@ const getMusicStepTutorial = (step: SessionStep): MusicStepTutorial => {
   };
 };
 
+const TutorialTooltip: React.FC<{
+  text: string;
+  top: number;
+  left: number;
+  onNext: () => void;
+  onSkip: () => void;
+  arrowTop?: string | number;
+}> = ({ text, top, left, onNext, onSkip, arrowTop = '50%' }) => (
+  <Box sx={{ position: 'fixed', top, left, zIndex: 1400, transform: 'translateY(-50%)' }}>
+    <Paper
+      elevation={6}
+      sx={{
+        position: 'relative',
+        p: 2,
+        maxWidth: 280,
+        bgcolor: 'background.paper',
+        borderRadius: 2,
+      }}
+    >
+      <Typography variant="body2" sx={{ mb: 2 }}>
+        {text}
+      </Typography>
+      <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+        <Button onClick={onSkip} variant="text" size="small">
+          Pular
+        </Button>
+        <Button onClick={onNext} variant="contained" size="small">
+          Próximo
+        </Button>
+      </Box>
+      <Box
+        sx={{
+          position: 'absolute',
+          top: arrowTop,
+          left: 0,
+          transform: 'translate(-100%, -50%)',
+          width: 0,
+          height: 0,
+          borderTop: '10px solid transparent',
+          borderBottom: '10px solid transparent',
+          borderRight: '10px solid #1976d2',
+        }}
+      />
+    </Paper>
+  </Box>
+);
+
 const MusicSessionPage: React.FC = () => {
   const navigate = useNavigate();
 
@@ -507,6 +614,16 @@ const MusicSessionPage: React.FC = () => {
   const [showStepTutorialModal, setShowStepTutorialModal] = useState(false);
   const [stepTutorialContent, setStepTutorialContent] = useState<MusicStepTutorial | null>(null);
   const [stepTutorialVersion, setStepTutorialVersion] = useState(0);
+  const [activeButtonTutorialKey, setActiveButtonTutorialKey] = useState<MusicButtonTutorialKey | null>(null);
+  const [buttonTutorialStep, setButtonTutorialStep] = useState<number | null>(null);
+  const [buttonTutorialVersion, setButtonTutorialVersion] = useState(0);
+  const [buttonTooltipConfig, setButtonTooltipConfig] = useState<{
+    open: boolean;
+    text: string;
+    top: number;
+    left: number;
+    arrowTop?: string | number;
+  }>({ open: false, text: '', top: 0, left: 0, arrowTop: '50%' });
   const [isLoadingCurrentMusic, setIsLoadingCurrentMusic] = useState(false);
   const [previewVisibleIds, setPreviewVisibleIds] = useState<number[]>([]);
   const [previewLoadingIds, setPreviewLoadingIds] = useState<number[]>([]);
@@ -516,6 +633,7 @@ const MusicSessionPage: React.FC = () => {
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
   const [musicProgress, setMusicProgress] = useState(0);
   const [stepCountdown, setStepCountdown] = useState<number | null>(null);
+  const [countdownLabel, setCountdownLabel] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isMicPaused, setIsMicPaused] = useState(false);
   const [hasStartedCurrentTake, setHasStartedCurrentTake] = useState(false);
@@ -526,6 +644,10 @@ const MusicSessionPage: React.FC = () => {
   const [isHighContrast, setIsHighContrast] = useState(false);
   const [isDyslexicFont, setIsDyslexicFont] = useState(false);
   const [skipCount, setSkipCount] = useState(0);
+  const [micPreviewReady, setMicPreviewReady] = useState(false);
+  const [micPreviewLoading, setMicPreviewLoading] = useState(false);
+  const [pendingReviewBlob, setPendingReviewBlob] = useState<Blob | null>(null);
+  const [pendingReviewUrl, setPendingReviewUrl] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -546,12 +668,31 @@ const MusicSessionPage: React.FC = () => {
   const loadedAudioUrlRef = useRef<string | null>(null);
   const pendingStepsRef = useRef<SessionStep[]>([]);
   const musicDetailsRef = useRef<Record<number, MusicDetails>>({});
+  const currentStepRef = useRef<SessionStep | null>(null);
   const seenTutorialKeysRef = useRef<Set<string>>(new Set());
+  const seenButtonTutorialKeysRef = useRef<Set<MusicButtonTutorialKey>>(new Set());
+
+  const dyslexicButtonRef = useRef<HTMLButtonElement | null>(null);
+  const contrastButtonRef = useRef<HTMLButtonElement | null>(null);
+  const fontSizeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const backButtonRef = useRef<HTMLButtonElement | null>(null);
+  const restartButtonRef = useRef<HTMLButtonElement | null>(null);
+  const mainActionButtonRef = useRef<HTMLButtonElement | null>(null);
+  const skipButtonRef = useRef<HTMLButtonElement | null>(null);
+  const saveButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const currentStep = steps[currentStepIndex] || null;
   const currentStepId = currentStep?.id || null;
   const currentStepType = currentStep?.type || null;
   const currentStepMusicId = currentStep?.musicId || null;
+  const currentStepTheme = useMemo(() => getStepTheme(currentStep), [currentStep]);
+  const currentButtonTutorialKey = useMemo<MusicButtonTutorialKey | null>(() => {
+    if (!currentStep) return null;
+    if (currentStep.type === 'phrase') return 'phrase-controls';
+    if (currentStep.type === 'listen') return 'listen-controls';
+    if (currentStep.type === 'record') return 'record-controls';
+    return null;
+  }, [currentStep]);
   const isSessionStarted = steps.length > 0 && !!session;
   const isLastStep = steps.length > 0 && currentStepIndex === steps.length - 1;
   const canUseVoiceMonitoring = currentStep?.type === 'record';
@@ -593,33 +734,54 @@ const MusicSessionPage: React.FC = () => {
   }, [musics]);
 
   const filteredMusics = useMemo(() => {
-    const normalizedSearch = setup.searchTerm.trim().toLocaleLowerCase('pt-BR');
+    const normalizedSearchTerms = setup.searchTerm
+      .trim()
+      .toLocaleLowerCase('pt-BR')
+      .split(/\s+/)
+      .filter(Boolean);
     const normalizedGenre = setup.genreFilter.trim().toLocaleLowerCase('pt-BR');
 
     return [...musics]
       .filter((music) => {
-        const matchesSearch = !normalizedSearch
-          || music.nome.toLocaleLowerCase('pt-BR').includes(normalizedSearch);
+        const searchableText = [music.nome, music.genero]
+          .filter(Boolean)
+          .join(' ')
+          .toLocaleLowerCase('pt-BR');
+        const matchesSearch = normalizedSearchTerms.length === 0
+          || normalizedSearchTerms.every(term => searchableText.includes(term));
         const matchesGenre = !normalizedGenre
           || music.genero.toLocaleLowerCase('pt-BR') === normalizedGenre;
         return matchesSearch && matchesGenre;
       })
       .sort((left, right) => {
-        const leftSelected = setup.selectedMusicIds.includes(left.id) ? 0 : 1;
-        const rightSelected = setup.selectedMusicIds.includes(right.id) ? 0 : 1;
+        if (setup.sortBy === 'selected') {
+          const leftOrder = selectedMusicMap[left.id] ?? Number.MAX_SAFE_INTEGER;
+          const rightOrder = selectedMusicMap[right.id] ?? Number.MAX_SAFE_INTEGER;
+          if (leftOrder !== rightOrder) {
+            return leftOrder - rightOrder;
+          }
+        }
 
-        if (leftSelected !== rightSelected) {
-          return leftSelected - rightSelected;
+        if (setup.sortBy === 'recent') {
+          return right.id - left.id;
+        }
+
+        if (setup.sortBy === 'genre') {
+          const genreCompare = (left.genero || '').localeCompare(right.genero || '', 'pt-BR', { sensitivity: 'base' });
+          if (genreCompare !== 0) {
+            return genreCompare;
+          }
         }
 
         return left.nome.localeCompare(right.nome, 'pt-BR', { sensitivity: 'base' });
       });
-  }, [musics, setup.genreFilter, setup.searchTerm, setup.selectedMusicIds]);
+  }, [musics, selectedMusicMap, setup.genreFilter, setup.searchTerm, setup.sortBy]);
 
   const listeningUnavailable = currentStep?.type === 'listen' && !currentMusicDetail?.vocal_audio_url;
-  const showRecordSetup = currentStep?.type === 'record' && (!hasStartedCurrentTake || isMicPaused || !isRecording);
+  const showRecordSetup = currentStep?.type === 'record' && stepCountdown === null && (!hasStartedCurrentTake || isMicPaused || !isRecording);
   const isRecordPreStart = currentStep?.type === 'record' && !hasStartedCurrentTake;
   const emphasizeRecordStart = currentStep?.type === 'record' && !hasStartedCurrentTake && stepCountdown === null;
+  const isButtonTutorialActive = buttonTutorialStep !== null && buttonTooltipConfig.open;
 
   const currentListenEnded = useMemo(() => {
     return musicProgress >= 99.5 && !isMusicPlaying;
@@ -647,9 +809,15 @@ const MusicSessionPage: React.FC = () => {
     return `${monitorSummary} • ${metronomeSummary} • ${voiceSummary}`;
   }, [currentMusicDetail?.bpm, currentStep, metronomeConfig.bpm, metronomeConfig.enabled, metronomeConfig.timeSignature, monitorMode, voiceMonitoring]);
 
+  const micSignalDetected = useMemo(() => dbfs > -55, [dbfs]);
+
   useEffect(() => {
     musicDetailsRef.current = musicDetails;
   }, [musicDetails]);
+
+  useEffect(() => {
+    currentStepRef.current = currentStep;
+  }, [currentStep]);
 
   const stopMusicProgressTracking = useCallback(() => {
     if (musicProgressIntervalRef.current) {
@@ -665,11 +833,13 @@ const MusicSessionPage: React.FC = () => {
     }
 
     setStepCountdown(null);
+    setCountdownLabel(null);
   }, []);
 
-  const beginStepCountdown = useCallback((onComplete: () => void | Promise<void>) => {
+  const beginStepCountdown = useCallback((onComplete: () => void | Promise<void>, label?: string) => {
     clearStepCountdown();
     setStepCountdown(3);
+    setCountdownLabel(label || null);
 
     let remaining = 3;
     stepCountdownIntervalRef.current = setInterval(() => {
@@ -765,6 +935,7 @@ const MusicSessionPage: React.FC = () => {
     }
 
     let currentBeat = 0;
+    setCountdownLabel('Contagem do metrônomo');
     setStepCountdown(totalBeats);
     await playMetronomeClick(true, volume);
     currentBeat += 1;
@@ -805,6 +976,7 @@ const MusicSessionPage: React.FC = () => {
     setIsMicPaused(false);
     setDbfs(-100);
     setStepCountdown(null);
+    setCountdownLabel(null);
   }, []);
 
   const cleanupStream = useCallback(() => {
@@ -832,7 +1004,18 @@ const MusicSessionPage: React.FC = () => {
     cleanupLiveIndicators();
     setTimer(0);
     setHasStartedCurrentTake(false);
+    setHasTriggeredListenPlayback(false);
   }, [cleanupLiveIndicators]);
+
+  const clearPendingReview = useCallback(() => {
+    setPendingReviewBlob(null);
+    setPendingReviewUrl((previous) => {
+      if (previous) {
+        URL.revokeObjectURL(previous);
+      }
+      return null;
+    });
+  }, []);
 
   const stopMusicPlayback = useCallback((clearSource = false) => {
     const audio = audioRef.current;
@@ -879,7 +1062,7 @@ const MusicSessionPage: React.FC = () => {
       return;
     }
 
-    const shouldReload = loadedAudioUrlRef.current !== url || restart;
+    const shouldReload = loadedAudioUrlRef.current !== url;
 
     if (shouldReload) {
       audio.pause();
@@ -893,6 +1076,11 @@ const MusicSessionPage: React.FC = () => {
       setMusicProgress(0);
     }
   }, [stopMusicPlayback]);
+
+  const primeAudioUrl = useCallback((url: string | null, restart = false) => {
+    if (!url) return;
+    loadAudioSource(url, restart);
+  }, [loadAudioSource]);
 
   const playAudioUrl = useCallback(async (url: string | null, restart = false) => {
     if (!url) return;
@@ -1000,6 +1188,26 @@ const MusicSessionPage: React.FC = () => {
     }
   }, []);
 
+  const prepareMicPreview = useCallback(async () => {
+    setMicPreviewLoading(true);
+    try {
+      await ensureMicrophoneReady();
+      if (!animationFrameRef.current) {
+        window.requestAnimationFrame(() => {
+          drawMicWave();
+        });
+      }
+      setMicPreviewReady(true);
+      setRuntimeError(null);
+    } catch (error) {
+      console.error('Não foi possível preparar o pré-teste do microfone:', error);
+      setMicPreviewReady(false);
+      setRuntimeError('Não foi possível preparar o microfone para a gravação.');
+    } finally {
+      setMicPreviewLoading(false);
+    }
+  }, [drawMicWave, ensureMicrophoneReady]);
+
   const syncVoiceMonitorAudio = useCallback(async (shouldListen: boolean) => {
     const audio = voiceMonitorAudioRef.current;
     if (!audio) return;
@@ -1082,6 +1290,7 @@ const MusicSessionPage: React.FC = () => {
         await finalizeRecording(true);
       }
 
+      clearPendingReview();
       await ensureMicrophoneReady();
       if (!streamRef.current) {
         throw new Error('Microfone indisponível.');
@@ -1119,7 +1328,7 @@ const MusicSessionPage: React.FC = () => {
       cleanupStream();
       cleanupLiveIndicators();
     }
-  }, [canUseVoiceMonitoring, cleanupLiveIndicators, cleanupStream, drawMicWave, ensureMicrophoneReady, finalizeRecording, syncVoiceMonitorAudio, voiceMonitoring]);
+  }, [canUseVoiceMonitoring, cleanupLiveIndicators, cleanupStream, clearPendingReview, drawMicWave, ensureMicrophoneReady, finalizeRecording, syncVoiceMonitorAudio, voiceMonitoring]);
 
   const getAudioDataAndMetadata = useCallback((audioBlob: Blob): Promise<{ duration: number; sampleRate: number; buffer: AudioBuffer }> => {
     return new Promise((resolve, reject) => {
@@ -1191,9 +1400,11 @@ const MusicSessionPage: React.FC = () => {
           const parts = line.split(',');
           const blockId = Number(parts[0]);
           const name = parts[1]?.replace(/"/g, '').trim() || `Bloco ${blockId}`;
+          const emotion = Number(parts[2] ?? 0);
+          const isSpontaneous = parts[3]?.trim() === '1';
 
           if (Number.isFinite(blockId)) {
-            blockMap.set(blockId, { blockId, name });
+            blockMap.set(blockId, { blockId, name, emotion, isSpontaneous });
           }
         });
 
@@ -1219,7 +1430,10 @@ const MusicSessionPage: React.FC = () => {
       const emotionalBlockIds = Array.from(
         new Set(
           datasetRows
-            .filter(row => row.blockId !== 2)
+            .filter((row) => {
+              const meta = blockMap.get(row.blockId);
+              return Boolean(meta && meta.emotion > 0 && !meta.isSpontaneous);
+            })
             .map(row => row.blockId),
         ),
       );
@@ -1395,6 +1609,24 @@ const MusicSessionPage: React.FC = () => {
       return;
     }
 
+    if (pendingReviewBlob) {
+      setIsProcessing(true);
+      setRuntimeError(null);
+
+      try {
+        await uploadStepRecording(currentStep, pendingReviewBlob);
+        clearPendingReview();
+        resetTakeState();
+        await advanceToNextStep();
+      } catch (error) {
+        console.error('Falha ao salvar a etapa atual da sessão de música:', error);
+        setRuntimeError('Não foi possível salvar a gravação atual. Tente novamente.');
+      } finally {
+        setIsProcessing(false);
+      }
+      return;
+    }
+
     if (!hasStartedCurrentTake) {
       setRuntimeError('Inicie a gravação atual antes de continuar.');
       return;
@@ -1412,6 +1644,14 @@ const MusicSessionPage: React.FC = () => {
         throw new Error('Nenhum áudio foi capturado na etapa atual.');
       }
 
+      if (currentStep.type === 'record') {
+        clearPendingReview();
+        setPendingReviewBlob(audioBlob);
+        setPendingReviewUrl(URL.createObjectURL(audioBlob));
+        resetTakeState();
+        return;
+      }
+
       await uploadStepRecording(currentStep, audioBlob);
       resetTakeState();
       await advanceToNextStep();
@@ -1421,7 +1661,7 @@ const MusicSessionPage: React.FC = () => {
     } finally {
       setIsProcessing(false);
     }
-  }, [advanceToNextStep, currentStep, finalizeRecording, hasStartedCurrentTake, resetTakeState, stopMetronome, stopMusicPlayback, uploadStepRecording]);
+  }, [advanceToNextStep, clearPendingReview, currentStep, finalizeRecording, hasStartedCurrentTake, pendingReviewBlob, resetTakeState, stopMetronome, stopMusicPlayback, uploadStepRecording]);
 
   const resolveMetronomeConfig = useCallback(() => {
     if (!metronomeConfig.enabled) {
@@ -1490,16 +1730,20 @@ const MusicSessionPage: React.FC = () => {
       const metronomeSession = resolveMetronomeConfig();
       setRuntimeError(null);
 
+      if (selectedMonitorUrl) {
+        primeAudioUrl(selectedMonitorUrl, restartMusic);
+      }
+
       if (metronomeSession && metronomeSession.countInBars > 0) {
         void startCurrentRecordTake(restartMusic);
         return;
       }
 
-      beginStepCountdown(() => startCurrentRecordTake(restartMusic));
+      beginStepCountdown(() => startCurrentRecordTake(restartMusic), 'A gravação vai começar');
     } catch (error) {
       setRuntimeError(error instanceof Error ? error.message : 'Não foi possível iniciar a gravação.');
     }
-  }, [beginStepCountdown, resolveMetronomeConfig, startCurrentRecordTake]);
+  }, [beginStepCountdown, primeAudioUrl, resolveMetronomeConfig, selectedMonitorUrl, startCurrentRecordTake]);
 
   const queueListenPlayback = useCallback((restart = false) => {
     const vocalUrl = currentMusicDetail?.vocal_audio_url || null;
@@ -1507,8 +1751,9 @@ const MusicSessionPage: React.FC = () => {
 
     setRuntimeError(null);
     setHasTriggeredListenPlayback(true);
-    beginStepCountdown(() => playAudioUrl(vocalUrl, restart));
-  }, [beginStepCountdown, currentMusicDetail?.vocal_audio_url, playAudioUrl]);
+    primeAudioUrl(vocalUrl, restart);
+    beginStepCountdown(() => playAudioUrl(vocalUrl, restart), 'A música vai começar');
+  }, [beginStepCountdown, currentMusicDetail?.vocal_audio_url, playAudioUrl, primeAudioUrl]);
 
   const handleToggleMainAction = useCallback(async () => {
     if (!currentStep) return;
@@ -1540,6 +1785,9 @@ const MusicSessionPage: React.FC = () => {
       const recorder = mediaRecorderRef.current;
 
       if (!hasStartedCurrentTake) {
+        if (pendingReviewBlob) {
+          clearPendingReview();
+        }
         queueCurrentRecordTake(true);
         return;
       }
@@ -1590,6 +1838,7 @@ const MusicSessionPage: React.FC = () => {
       setIsMicPaused(true);
     }
   }, [
+    clearPendingReview,
     currentListenEnded,
     currentMusicDetail?.vocal_audio_url,
     currentStep,
@@ -1598,6 +1847,7 @@ const MusicSessionPage: React.FC = () => {
     isMusicPlaying,
     mediaRecorderRef,
     musicProgress,
+    pendingReviewBlob,
     playAudioUrl,
     queueCurrentRecordTake,
     queueListenPlayback,
@@ -1614,6 +1864,7 @@ const MusicSessionPage: React.FC = () => {
 
     setRuntimeError(null);
     setStepAudioError(null);
+    clearPendingReview();
 
     if (currentStep.type === 'listen') {
       stopMusicPlayback(true);
@@ -1633,7 +1884,7 @@ const MusicSessionPage: React.FC = () => {
     window.setTimeout(() => {
       void startRecording();
     }, 150);
-  }, [currentStep, finalizeRecording, queueListenPlayback, resetTakeState, startRecording, stopMetronome, stopMusicPlayback]);
+  }, [clearPendingReview, currentStep, finalizeRecording, queueListenPlayback, resetTakeState, startRecording, stopMetronome, stopMusicPlayback]);
 
   const replaceCurrentPhrase = useCallback(() => {
     const step = currentStep;
@@ -1670,6 +1921,7 @@ const MusicSessionPage: React.FC = () => {
 
     setRuntimeError(null);
     setStepAudioError(null);
+    clearPendingReview();
     stopMusicPlayback(true);
     stopMetronome();
     await finalizeRecording(true);
@@ -1689,19 +1941,20 @@ const MusicSessionPage: React.FC = () => {
     }
 
     await advanceToNextStep();
-  }, [advanceToNextStep, currentStep, finalizeRecording, replaceCurrentPhrase, resetTakeState, skipCount, stopMetronome, stopMusicPlayback]);
+  }, [advanceToNextStep, clearPendingReview, currentStep, finalizeRecording, replaceCurrentPhrase, resetTakeState, skipCount, stopMetronome, stopMusicPlayback]);
 
   const handleGoBack = useCallback(async () => {
     if (currentStepIndex === 0) return;
 
     setRuntimeError(null);
     setStepAudioError(null);
+    clearPendingReview();
     stopMusicPlayback(true);
     stopMetronome();
     await finalizeRecording(true);
     resetTakeState();
     setCurrentStepIndex(previous => Math.max(0, previous - 1));
-  }, [currentStepIndex, finalizeRecording, resetTakeState, stopMetronome, stopMusicPlayback]);
+  }, [clearPendingReview, currentStepIndex, finalizeRecording, resetTakeState, stopMetronome, stopMusicPlayback]);
 
   const handleStartSession = useCallback(async () => {
     const packageConfig = getPackageConfig(setup.packageKey);
@@ -1782,6 +2035,18 @@ const MusicSessionPage: React.FC = () => {
     }
   }, [existingSessionInfo, stopMetronome]);
 
+  const handleResumeExistingSession = useCallback(() => {
+    if (!existingSessionInfo || pendingStepsRef.current.length === 0) return;
+
+    setSession(existingSessionInfo);
+    setSteps(pendingStepsRef.current);
+    setCurrentStepIndex(Math.max(0, Math.min(existingSessionInfo.numero_frase || 0, pendingStepsRef.current.length - 1)));
+    setExistingSessionInfo(null);
+    setShowExistingSessionModal(false);
+    setRuntimeError(null);
+    setSetupError(null);
+  }, [existingSessionInfo]);
+
   const handleCancelSession = useCallback(async () => {
     stopMetronome();
     if (session) {
@@ -1809,6 +2074,24 @@ const MusicSessionPage: React.FC = () => {
     setSetupError(null);
   }, []);
 
+  const handleAdvanceToReviewStage = useCallback(() => {
+    const packageConfig = getPackageConfig(setup.packageKey);
+    const selectedCount = setup.selectedMusicIds.length;
+
+    if (selectedCount < packageConfig.minSongs) {
+      setSetupError(`O pacote ${packageConfig.label.toLowerCase()} precisa de ${formatPackageRule(packageConfig)}.`);
+      return;
+    }
+
+    setSetupStage('review');
+    setSetupError(null);
+  }, [setup.packageKey, setup.selectedMusicIds.length]);
+
+  const handleBackToMusicStage = useCallback(() => {
+    setSetupStage('music');
+    setSetupError(null);
+  }, []);
+
   const handleCloseStepTutorial = useCallback(() => {
     if (stepTutorialContent) {
       seenTutorialKeysRef.current.add(stepTutorialContent.key);
@@ -1817,6 +2100,37 @@ const MusicSessionPage: React.FC = () => {
     setShowStepTutorialModal(false);
     setStepTutorialVersion(previous => previous + 1);
   }, [stepTutorialContent]);
+
+  const handleNextButtonTutorialStep = useCallback(() => {
+    if (!activeButtonTutorialKey || buttonTutorialStep === null) return;
+
+    const totalSteps = activeButtonTutorialKey === 'phrase-controls'
+      ? 6
+      : activeButtonTutorialKey === 'listen-controls'
+        ? 5
+        : 5;
+
+    if (buttonTutorialStep >= totalSteps - 1) {
+      seenButtonTutorialKeysRef.current.add(activeButtonTutorialKey);
+      setActiveButtonTutorialKey(null);
+      setButtonTutorialStep(null);
+      setButtonTooltipConfig(previous => ({ ...previous, open: false }));
+      setButtonTutorialVersion(previous => previous + 1);
+      return;
+    }
+
+    setButtonTutorialStep(previous => (previous === null ? null : previous + 1));
+  }, [activeButtonTutorialKey, buttonTutorialStep]);
+
+  const handleSkipButtonTutorial = useCallback(() => {
+    if (!activeButtonTutorialKey) return;
+
+    seenButtonTutorialKeysRef.current.add(activeButtonTutorialKey);
+    setActiveButtonTutorialKey(null);
+    setButtonTutorialStep(null);
+    setButtonTooltipConfig(previous => ({ ...previous, open: false }));
+    setButtonTutorialVersion(previous => previous + 1);
+  }, [activeButtonTutorialKey]);
 
   const handlePackageChange = useCallback((packageKey: SessionPackageKey) => {
     const nextConfig = getPackageConfig(packageKey);
@@ -1860,6 +2174,27 @@ const MusicSessionPage: React.FC = () => {
     setSetupError(null);
   }, [selectedPackageConfig.label, selectedPackageConfig.maxSongs, setup.selectedMusicIds]);
 
+  const handleMoveSelectedMusic = useCallback((musicId: number, direction: 'up' | 'down') => {
+    setSetup((previous) => {
+      const currentIndex = previous.selectedMusicIds.indexOf(musicId);
+      if (currentIndex === -1) return previous;
+
+      const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+      if (targetIndex < 0 || targetIndex >= previous.selectedMusicIds.length) {
+        return previous;
+      }
+
+      const nextSelectedMusicIds = [...previous.selectedMusicIds];
+      const [movedId] = nextSelectedMusicIds.splice(currentIndex, 1);
+      nextSelectedMusicIds.splice(targetIndex, 0, movedId);
+
+      return {
+        ...previous,
+        selectedMusicIds: nextSelectedMusicIds,
+      };
+    });
+  }, []);
+
   const handleToggleMusicPreview = useCallback(async (musicId: number) => {
     if (previewVisibleIds.includes(musicId)) {
       setPreviewVisibleIds(previous => previous.filter(id => id !== musicId));
@@ -1884,11 +2219,145 @@ const MusicSessionPage: React.FC = () => {
   }, [loadSetupData]);
 
   useEffect(() => {
+    clearPendingReview();
+  }, [clearPendingReview, currentStepId]);
+
+  useEffect(() => {
+    setSkipCount(0);
+  }, [currentStepId]);
+
+  useEffect(() => {
+    if (currentStep?.type !== 'record' || !showRecordSetup || stepCountdown !== null) {
+      setMicPreviewReady(false);
+      return;
+    }
+
+    void prepareMicPreview();
+  }, [currentStep?.type, prepareMicPreview, showRecordSetup, stepCountdown]);
+
+  useEffect(() => {
+    if (buttonTutorialStep === null || !activeButtonTutorialKey) return;
+
+    const config = {
+      open: true,
+      text: '',
+      top: 0,
+      left: 0,
+      arrowTop: '50%' as string | number,
+    };
+
+    const resolveStep = () => {
+      let rect: DOMRect | undefined;
+
+      if (activeButtonTutorialKey === 'phrase-controls') {
+        switch (buttonTutorialStep) {
+          case 0:
+            rect = dyslexicButtonRef.current?.getBoundingClientRect()
+              || contrastButtonRef.current?.getBoundingClientRect()
+              || fontSizeButtonRef.current?.getBoundingClientRect();
+            config.text = 'Aqui você ajusta fonte, contraste e tamanho da frase para facilitar a leitura.';
+            break;
+          case 1:
+            rect = mainActionButtonRef.current?.getBoundingClientRect();
+            config.text = 'Este botão pausa ou retoma a leitura da frase atual.';
+            break;
+          case 2:
+            rect = restartButtonRef.current?.getBoundingClientRect();
+            config.text = 'Use aqui para recomeçar a frase atual desde o início.';
+            break;
+          case 3:
+            rect = skipButtonRef.current?.getBoundingClientRect();
+            config.text = 'Aqui você troca a frase ou pula a etapa atual se precisar.';
+            break;
+          case 4:
+            rect = saveButtonRef.current?.getBoundingClientRect();
+            config.text = 'Quando terminar, clique aqui para salvar e continuar.';
+            break;
+          case 5:
+            rect = backButtonRef.current?.getBoundingClientRect();
+            config.text = 'Este botão volta para a etapa anterior da sessão.';
+            break;
+          default:
+            break;
+        }
+      }
+
+      if (activeButtonTutorialKey === 'listen-controls') {
+        switch (buttonTutorialStep) {
+          case 0:
+            rect = mainActionButtonRef.current?.getBoundingClientRect();
+            config.text = 'Use este botão para tocar ou pausar a música original.';
+            break;
+          case 1:
+            rect = restartButtonRef.current?.getBoundingClientRect();
+            config.text = 'Aqui você ouve a música novamente desde o começo.';
+            break;
+          case 2:
+            rect = saveButtonRef.current?.getBoundingClientRect();
+            config.text = 'Quando terminar de ouvir, use este botão para ir para a gravação.';
+            break;
+          case 3:
+            rect = skipButtonRef.current?.getBoundingClientRect();
+            config.text = 'Se não quiser ouvir agora, você pode pular esta etapa aqui.';
+            break;
+          case 4:
+            rect = backButtonRef.current?.getBoundingClientRect();
+            config.text = 'Este botão volta para a etapa anterior.';
+            break;
+          default:
+            break;
+        }
+      }
+
+      if (activeButtonTutorialKey === 'record-controls') {
+        switch (buttonTutorialStep) {
+          case 0:
+            rect = mainActionButtonRef.current?.getBoundingClientRect();
+            config.text = 'Depois de ajustar tudo, clique aqui para começar a gravação. Durante a take, ele também pausa e retoma.';
+            break;
+          case 1:
+            rect = restartButtonRef.current?.getBoundingClientRect();
+            config.text = 'Use este botão para regravar a música atual desde o começo.';
+            break;
+          case 2:
+            rect = saveButtonRef.current?.getBoundingClientRect();
+            config.text = 'Quando terminar de cantar, clique aqui para salvar a take e continuar.';
+            break;
+          case 3:
+            rect = skipButtonRef.current?.getBoundingClientRect();
+            config.text = 'Se não quiser gravar esta música agora, você pode pular por aqui.';
+            break;
+          case 4:
+            rect = backButtonRef.current?.getBoundingClientRect();
+            config.text = 'Este botão volta para a etapa anterior da sessão.';
+            break;
+          default:
+            break;
+        }
+      }
+
+      if (!rect) {
+        setButtonTooltipConfig(previous => ({ ...previous, open: false }));
+        return;
+      }
+
+      setButtonTooltipConfig({
+        ...config,
+        top: rect.top + rect.height / 2,
+        left: rect.right + 20,
+      });
+    };
+
+    const timeoutId = window.setTimeout(resolveStep, 120);
+    return () => clearTimeout(timeoutId);
+  }, [activeButtonTutorialKey, buttonTutorialStep]);
+
+  useEffect(() => {
     if (!currentStepId || !currentStepType) return;
 
     let cancelled = false;
     let timeoutId: number | undefined;
-    const currentTutorial = currentStep ? getMusicStepTutorial(currentStep) : null;
+    const currentTutorial = currentStepRef.current ? getMusicStepTutorial(currentStepRef.current) : null;
 
     clearStepCountdown();
     stopMusicPlayback(true);
@@ -1896,7 +2365,6 @@ const MusicSessionPage: React.FC = () => {
     resetTakeState();
     setStepAudioError(null);
     setHasTriggeredListenPlayback(false);
-    setSkipCount(0);
 
     if (currentStepType !== 'record') {
       setVoiceMonitoring(false);
@@ -1908,9 +2376,23 @@ const MusicSessionPage: React.FC = () => {
       };
     }
 
+    if (buttonTutorialStep !== null) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
     if (currentTutorial && !seenTutorialKeysRef.current.has(currentTutorial.key)) {
       setStepTutorialContent(currentTutorial);
       setShowStepTutorialModal(true);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (currentButtonTutorialKey && !seenButtonTutorialKeysRef.current.has(currentButtonTutorialKey)) {
+      setActiveButtonTutorialKey(currentButtonTutorialKey);
+      setButtonTutorialStep(0);
       return () => {
         cancelled = true;
       };
@@ -1967,7 +2449,7 @@ const MusicSessionPage: React.FC = () => {
       clearStepCountdown();
       stopMetronome();
     };
-  }, [beginStepCountdown, clearStepCountdown, currentStep, currentStepId, currentStepMusicId, currentStepType, ensureMusicDetails, playAudioUrl, resetTakeState, showStepTutorialModal, startRecording, stepTutorialVersion, stopMetronome, stopMusicPlayback]);
+  }, [beginStepCountdown, buttonTutorialStep, buttonTutorialVersion, clearStepCountdown, currentButtonTutorialKey, currentStepId, currentStepMusicId, currentStepType, ensureMusicDetails, playAudioUrl, resetTakeState, showStepTutorialModal, startRecording, stepTutorialVersion, stopMetronome, stopMusicPlayback]);
 
   useEffect(() => {
     if (!isRecording || isMicPaused) return;
@@ -2017,12 +2499,13 @@ const MusicSessionPage: React.FC = () => {
 
   useEffect(() => {
     return () => {
+      clearPendingReview();
       stopMusicPlayback(true);
       stopMetronome();
       cleanupLiveIndicators();
       cleanupStream();
     };
-  }, [cleanupLiveIndicators, cleanupStream, stopMetronome, stopMusicPlayback]);
+  }, [cleanupLiveIndicators, cleanupStream, clearPendingReview, stopMetronome, stopMusicPlayback]);
 
   const mainToggleLabel = useMemo(() => {
     if (!currentStep) return 'Iniciar';
@@ -2057,16 +2540,17 @@ const MusicSessionPage: React.FC = () => {
     if (currentStep.type === 'record') return 'Pular música';
     if (currentStep.type === 'listen') return 'Pular audição';
     if (currentStep.alternatives.length === 0) return 'Pular frase';
-    return `Trocar frase (${Math.min(skipCount + 1, 3)}/3)`;
+    return `Trocar frase (${skipCount + 1}/3)`;
   }, [currentStep, skipCount]);
 
   const saveLabel = useMemo(() => {
     if (!currentStep) return 'Continuar';
     if (currentStep.type === 'listen') return 'Ir para gravação';
+    if (pendingReviewBlob) return isLastStep ? 'Salvar definitivo e finalizar' : 'Salvar definitivo';
     if (isLastStep) return 'Salvar e finalizar';
     if (currentStep.type === 'record') return 'Salvar e próxima etapa';
     return 'Salvar e continuar';
-  }, [currentStep, isLastStep]);
+  }, [currentStep, isLastStep, pendingReviewBlob]);
 
   if (!isSessionStarted) {
     return (
@@ -2075,9 +2559,12 @@ const MusicSessionPage: React.FC = () => {
           <Box sx={modalStyle}>
             <Typography variant="h6">Você já possui uma sessão de música ativa.</Typography>
             <Typography sx={{ mt: 2 }}>
-              Para iniciar uma nova sessão, finalize a sessão ativa primeiro.
+              Você pode continuar da etapa onde parou ou encerrar a sessão atual para começar outra.
             </Typography>
-            <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+            <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
+              <Button variant="outlined" onClick={handleResumeExistingSession} disabled={isProcessing}>
+                Voltar para sessão existente
+              </Button>
               <Button variant="contained" onClick={handleFinalizeCurrentAndStartNew} disabled={isProcessing}>
                 Finalizar sessão atual e iniciar nova
               </Button>
@@ -2118,14 +2605,11 @@ const MusicSessionPage: React.FC = () => {
               <Box
                 sx={{
                   display: 'grid',
-                  gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
+                  gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
                   gap: 1.5,
                 }}
               >
-                {[
-                  { step: '1', title: 'Tamanho', active: setupStage === 'package' },
-                  { step: '2', title: 'Músicas', active: setupStage === 'music' },
-                ].map((item, index) => (
+                {getSetupStageItems(setupStage).map((item) => (
                   <Paper
                     key={item.step}
                     variant="outlined"
@@ -2134,11 +2618,11 @@ const MusicSessionPage: React.FC = () => {
                       borderRadius: 3,
                       borderColor: item.active ? 'primary.main' : 'divider',
                       bgcolor: item.active ? 'action.selected' : 'background.paper',
-                      opacity: setupStage === 'music' || index === 0 ? 1 : 0.7,
+                      opacity: item.active || item.done ? 1 : 0.72,
                     }}
                   >
                     <Typography variant="caption" color="text.secondary">
-                      Etapa {item.step}
+                      Etapa {item.step}{item.done ? ' • concluída' : ''}
                     </Typography>
                     <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                       {item.title}
@@ -2212,7 +2696,7 @@ const MusicSessionPage: React.FC = () => {
                     </Button>
                   </Box>
                 </>
-              ) : (
+              ) : setupStage === 'music' ? (
                 <>
                   <Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 }, borderRadius: 3 }}>
                     <Stack spacing={2}>
@@ -2253,13 +2737,13 @@ const MusicSessionPage: React.FC = () => {
                       <Box
                         sx={{
                           display: 'grid',
-                          gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1.6fr) minmax(200px, 0.8fr)' },
+                          gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1.5fr) minmax(200px, 0.8fr) minmax(180px, 0.7fr)' },
                           gap: 2,
                         }}
                       >
                         <TextField
-                          label="Buscar por nome"
-                          placeholder="Digite parte do nome da música"
+                          label="Buscar por nome ou gênero"
+                          placeholder="Ex.: pop suave acústico"
                           value={setup.searchTerm}
                           onChange={(event) => {
                             const value = event.target.value;
@@ -2287,122 +2771,256 @@ const MusicSessionPage: React.FC = () => {
                             ))}
                           </Select>
                         </FormControl>
+
+                        <FormControl fullWidth>
+                          <InputLabel id="music-sort-filter-label">Ordenar por</InputLabel>
+                          <Select
+                            labelId="music-sort-filter-label"
+                            label="Ordenar por"
+                            value={setup.sortBy}
+                            onChange={(event) => {
+                              setSetup(previous => ({ ...previous, sortBy: event.target.value as MusicSortOption }));
+                            }}
+                          >
+                            <MenuItem value="selected">Selecionadas primeiro</MenuItem>
+                            <MenuItem value="name">Nome</MenuItem>
+                            <MenuItem value="genre">Gênero</MenuItem>
+                            <MenuItem value="recent">Mais recentes</MenuItem>
+                          </Select>
+                        </FormControl>
                       </Box>
 
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
-                        <Typography variant="body2" color="text.secondary">
-                          {filteredMusics.length} música{filteredMusics.length !== 1 ? 's' : ''} encontrada{filteredMusics.length !== 1 ? 's' : ''}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Selecionadas: {setup.selectedMusicIds.length}
-                          {selectedPackageConfig.maxSongs !== null ? ` / ${selectedPackageConfig.maxSongs}` : '+'}
-                        </Typography>
-                      </Box>
+                      <Box
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns: { xs: '1fr', lg: 'minmax(260px, 0.9fr) minmax(0, 1.6fr)' },
+                          gap: 2,
+                          alignItems: 'start',
+                        }}
+                      >
+                        <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, bgcolor: 'background.default' }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>
+                            Ordem escolhida
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            Defina aqui a sequência em que você quer cantar.
+                          </Typography>
 
-                      {musics.length === 0 ? (
-                        <Alert severity="warning">
-                          Nenhuma música foi retornada pela API no momento.
-                        </Alert>
-                      ) : filteredMusics.length === 0 ? (
-                        <Alert severity="info">
-                          Nenhuma música encontrada com esse filtro.
-                        </Alert>
-                      ) : (
-                        <Stack spacing={1.25} sx={{ maxHeight: 620, overflowY: 'auto', pr: 0.5 }}>
-                          {filteredMusics.map((music) => {
-                            const isSelected = setup.selectedMusicIds.includes(music.id);
-                            const selectionOrder = selectedMusicMap[music.id];
-                            const isPreviewVisible = previewVisibleIds.includes(music.id);
-                            const isPreviewLoading = previewLoadingIds.includes(music.id);
-                            const musicPreview = musicDetails[music.id];
-
-                            return (
-                              <Paper
-                                key={music.id}
-                                variant="outlined"
-                                sx={{
-                                  p: 1.5,
-                                  borderRadius: 2.5,
-                                  borderColor: isSelected ? 'primary.main' : 'divider',
-                                  bgcolor: isSelected ? 'action.selected' : 'background.paper',
-                                }}
-                              >
-                                <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
-                                  <Button
-                                    variant={isSelected ? 'contained' : 'outlined'}
-                                    size="small"
-                                    onClick={() => handleSelectMusic(music.id)}
-                                    sx={{ minWidth: 112 }}
-                                  >
-                                    {isSelected ? `Selecionada ${selectionOrder}` : 'Selecionar'}
-                                  </Button>
-
-                                  <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-                                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                                      {music.nome}
+                          {selectedMusicSummaries.length === 0 ? (
+                            <Typography variant="body2" color="text.secondary">
+                              Nenhuma música selecionada ainda.
+                            </Typography>
+                          ) : (
+                            <Stack spacing={1}>
+                              {selectedMusicSummaries.map((music, index) => (
+                                <Paper key={music.id} variant="outlined" sx={{ p: 1.25, borderRadius: 2.5 }}>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Typography variant="body2" sx={{ minWidth: 22, fontWeight: 700 }}>
+                                      {index + 1}.
                                     </Typography>
-                                    <Typography variant="caption" color="text.secondary">
-                                      {music.genero || 'Gênero não informado'}
-                                    </Typography>
+                                    <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                                      <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                        {music.nome}
+                                      </Typography>
+                                      <Typography variant="caption" color="text.secondary">
+                                        {music.genero || 'Gênero não informado'}
+                                      </Typography>
+                                    </Box>
+                                    <Button size="small" variant="outlined" onClick={() => handleMoveSelectedMusic(music.id, 'up')} disabled={index === 0}>
+                                      Subir
+                                    </Button>
+                                    <Button size="small" variant="outlined" onClick={() => handleMoveSelectedMusic(music.id, 'down')} disabled={index === selectedMusicSummaries.length - 1}>
+                                      Descer
+                                    </Button>
                                   </Box>
+                                </Paper>
+                              ))}
+                            </Stack>
+                          )}
+                        </Paper>
 
-                                  <Button
-                                    variant="text"
-                                    size="small"
-                                    onClick={() => {
-                                      void handleToggleMusicPreview(music.id);
+                        <Box>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap', mb: 1.5 }}>
+                            <Typography variant="body2" color="text.secondary">
+                              {filteredMusics.length} música{filteredMusics.length !== 1 ? 's' : ''} encontrada{filteredMusics.length !== 1 ? 's' : ''}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Selecionadas: {setup.selectedMusicIds.length}
+                              {selectedPackageConfig.maxSongs !== null ? ` / ${selectedPackageConfig.maxSongs}` : '+'}
+                            </Typography>
+                          </Box>
+
+                          {musics.length === 0 ? (
+                            <Alert severity="warning">
+                              Nenhuma música foi retornada pela API no momento.
+                            </Alert>
+                          ) : filteredMusics.length === 0 ? (
+                            <Alert severity="info">
+                              Nenhuma música encontrada com esse filtro.
+                            </Alert>
+                          ) : (
+                            <Stack spacing={1.25} sx={{ maxHeight: 620, overflowY: 'auto', pr: 0.5 }}>
+                              {filteredMusics.map((music) => {
+                                const isSelected = setup.selectedMusicIds.includes(music.id);
+                                const selectionOrder = selectedMusicMap[music.id];
+                                const isPreviewVisible = previewVisibleIds.includes(music.id);
+                                const isPreviewLoading = previewLoadingIds.includes(music.id);
+                                const musicPreview = musicDetails[music.id];
+
+                                return (
+                                  <Paper
+                                    key={music.id}
+                                    variant="outlined"
+                                    sx={{
+                                      p: 1.5,
+                                      borderRadius: 2.5,
+                                      borderColor: isSelected ? 'primary.main' : 'divider',
+                                      bgcolor: isSelected ? 'action.selected' : 'background.paper',
                                     }}
-                                    disabled={isPreviewLoading}
                                   >
-                                    {isPreviewLoading
-                                      ? 'Carregando...'
-                                      : isPreviewVisible
-                                        ? 'Ocultar prévia'
-                                        : 'Prévia'}
-                                  </Button>
-                                </Box>
+                                    <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
+                                      <Button
+                                        variant={isSelected ? 'contained' : 'outlined'}
+                                        size="small"
+                                        onClick={() => handleSelectMusic(music.id)}
+                                        sx={{ minWidth: 120 }}
+                                      >
+                                        {isSelected ? `Selecionada ${selectionOrder}` : 'Selecionar'}
+                                      </Button>
 
-                                {isPreviewVisible && musicPreview && (
-                                  <Paper variant="outlined" sx={{ mt: 1.5, p: 2, borderRadius: 2, bgcolor: 'background.default' }}>
-                                    <Stack spacing={2}>
-                                      <Box>
-                                        <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                          Música original
+                                      <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                                        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                          {music.nome}
                                         </Typography>
-                                        {musicPreview.vocal_audio_url ? (
-                                          <audio controls src={musicPreview.vocal_audio_url} style={{ width: '100%' }} />
-                                        ) : (
-                                          <Typography variant="body2" color="text.secondary">
-                                            Esta música não possui áudio vocal.
-                                          </Typography>
-                                        )}
+                                        <Typography variant="caption" color="text.secondary">
+                                          {music.genero || 'Gênero não informado'}
+                                        </Typography>
                                       </Box>
 
-                                      <Box>
-                                        <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                          Instrumental
-                                        </Typography>
-                                        {musicPreview.instrumental_audio_url ? (
-                                          <audio controls src={musicPreview.instrumental_audio_url} style={{ width: '100%' }} />
-                                        ) : (
-                                          <Typography variant="body2" color="text.secondary">
-                                            Esta música não possui faixa instrumental.
-                                          </Typography>
-                                        )}
-                                      </Box>
-                                    </Stack>
+                                      <Button
+                                        variant="text"
+                                        size="small"
+                                        onClick={() => {
+                                          void handleToggleMusicPreview(music.id);
+                                        }}
+                                        disabled={isPreviewLoading}
+                                      >
+                                        {isPreviewLoading
+                                          ? 'Carregando...'
+                                          : isPreviewVisible
+                                            ? 'Ocultar prévia'
+                                            : 'Prévia'}
+                                      </Button>
+                                    </Box>
+
+                                    {isPreviewVisible && musicPreview && (
+                                      <Paper variant="outlined" sx={{ mt: 1.5, p: 2, borderRadius: 2, bgcolor: 'background.default' }}>
+                                        <Stack spacing={2}>
+                                          <Box>
+                                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                                              Música original
+                                            </Typography>
+                                            {musicPreview.vocal_audio_url ? (
+                                              <audio controls src={musicPreview.vocal_audio_url} style={{ width: '100%' }} />
+                                            ) : (
+                                              <Typography variant="body2" color="text.secondary">
+                                                Esta música não possui áudio vocal.
+                                              </Typography>
+                                            )}
+                                          </Box>
+
+                                          <Box>
+                                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                                              Instrumental
+                                            </Typography>
+                                            {musicPreview.instrumental_audio_url ? (
+                                              <audio controls src={musicPreview.instrumental_audio_url} style={{ width: '100%' }} />
+                                            ) : (
+                                              <Typography variant="body2" color="text.secondary">
+                                                Esta música não possui faixa instrumental.
+                                              </Typography>
+                                            )}
+                                          </Box>
+                                        </Stack>
+                                      </Paper>
+                                    )}
                                   </Paper>
-                                )}
-                              </Paper>
-                            );
-                          })}
-                        </Stack>
-                      )}
+                                );
+                              })}
+                            </Stack>
+                          )}
+                        </Box>
+                      </Box>
                     </Stack>
                   </Paper>
 
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
                     <Button variant="outlined" onClick={handleBackToPackageStage}>
+                      Voltar
+                    </Button>
+                    <Button variant="contained" onClick={handleAdvanceToReviewStage} disabled={musics.length === 0}>
+                      Revisar seleção
+                    </Button>
+                  </Box>
+                </>
+              ) : (
+                <>
+                  <Paper variant="outlined" sx={{ p: { xs: 2.5, md: 3 }, borderRadius: 3 }}>
+                    <Stack spacing={2}>
+                      <Box>
+                        <Typography variant="h6">
+                          3. Revisar seleção
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                          Confira a quantidade e a ordem das músicas antes de começar.
+                        </Typography>
+                      </Box>
+
+                      {setupError && (
+                        <Alert severity="error">
+                          {setupError}
+                        </Alert>
+                      )}
+
+                      <Paper variant="outlined" sx={{ p: 2, borderRadius: 2.5, bgcolor: 'background.default' }}>
+                        <Typography variant="body2" color="text.secondary">
+                          Quantidade escolhida
+                        </Typography>
+                        <Typography variant="h4" sx={{ mt: 0.5 }}>
+                          {setup.selectedMusicIds.length}
+                        </Typography>
+                      </Paper>
+
+                      <Stack spacing={1.25}>
+                        {selectedMusicSummaries.map((music, index) => (
+                          <Paper key={music.id} variant="outlined" sx={{ p: 1.75, borderRadius: 2.5 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                              <Typography variant="subtitle2" sx={{ minWidth: 26, fontWeight: 800 }}>
+                                {index + 1}.
+                              </Typography>
+                              <Box sx={{ flexGrow: 1 }}>
+                                <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                  {music.nome}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  {music.genero || 'Gênero não informado'}
+                                </Typography>
+                              </Box>
+                              <Button size="small" variant="outlined" onClick={() => handleMoveSelectedMusic(music.id, 'up')} disabled={index === 0}>
+                                Subir
+                              </Button>
+                              <Button size="small" variant="outlined" onClick={() => handleMoveSelectedMusic(music.id, 'down')} disabled={index === selectedMusicSummaries.length - 1}>
+                                Descer
+                              </Button>
+                            </Box>
+                          </Paper>
+                        ))}
+                      </Stack>
+                    </Stack>
+                  </Paper>
+
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
+                    <Button variant="outlined" onClick={handleBackToMusicStage}>
                       Voltar
                     </Button>
                     <Button variant="contained" onClick={handleStartSession} disabled={isPreparingSession || musics.length === 0}>
@@ -2419,7 +3037,7 @@ const MusicSessionPage: React.FC = () => {
   }
 
   return (
-    <Container maxWidth="lg">
+    <Container maxWidth="lg" sx={{ pb: 18 }}>
       <Modal open={showStepTutorialModal && !!stepTutorialContent} onClose={handleCloseStepTutorial}>
         <Box sx={{ ...modalStyle, p: 0, overflow: 'hidden', borderRadius: 2, width: 560, maxWidth: 'calc(100vw - 32px)' }}>
           <Box sx={{ bgcolor: 'primary.main', color: 'primary.contrastText', p: 2, display: 'flex', alignItems: 'center' }}>
@@ -2465,6 +3083,28 @@ const MusicSessionPage: React.FC = () => {
         </Box>
       </Modal>
 
+      <Modal open={Boolean(pendingReviewUrl && currentStep?.type === 'record')} onClose={() => undefined}>
+        <Box sx={{ ...modalStyle, width: 560, maxWidth: 'calc(100vw - 32px)' }}>
+          <Typography variant="h6">Como ficou a canção</Typography>
+          <Typography sx={{ mt: 1.5 }} color="text.secondary">
+            Ouça a gravação da música antes de salvar definitivamente.
+          </Typography>
+          {pendingReviewUrl && (
+            <Box sx={{ mt: 3 }}>
+              <audio controls src={pendingReviewUrl} style={{ width: '100%' }} />
+            </Box>
+          )}
+          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
+            <Button variant="outlined" onClick={() => { void handleRestartCurrentStep(); }} disabled={isProcessing}>
+              Regravar música
+            </Button>
+            <Button variant="contained" onClick={() => { void handleSaveCurrentStep(); }} disabled={isProcessing}>
+              {isProcessing ? <CircularProgress size={24} color="inherit" /> : 'Salvar definitivo'}
+            </Button>
+          </Box>
+        </Box>
+      </Modal>
+
       <Modal open={showFinishModal}>
         <Box sx={modalStyle}>
           <Typography variant="h6">Sessão finalizada</Typography>
@@ -2477,11 +3117,26 @@ const MusicSessionPage: React.FC = () => {
         </Box>
       </Modal>
 
-      <Typography variant="h3" component="h1" textAlign="center" sx={{ mt: 4, mb: 2 }}>
-        Sessão de Música
-      </Typography>
+      {isButtonTutorialActive && buttonTooltipConfig.open && (
+        <TutorialTooltip
+          text={buttonTooltipConfig.text}
+          top={buttonTooltipConfig.top}
+          left={buttonTooltipConfig.left}
+          arrowTop={buttonTooltipConfig.arrowTop}
+          onNext={handleNextButtonTutorialStep}
+          onSkip={handleSkipButtonTutorial}
+        />
+      )}
 
-      <Paper elevation={3} sx={{ p: { xs: 2.5, md: 4 }, borderRadius: 4 }}>
+      <Paper
+        elevation={3}
+        sx={{
+          p: { xs: 2.5, md: 4 },
+          borderRadius: 4,
+          filter: isButtonTutorialActive ? 'brightness(0.7)' : 'none',
+          pointerEvents: isButtonTutorialActive ? 'none' : 'auto',
+        }}
+      >
         <Box sx={{ width: '100%', mb: 3 }}>
           <LinearProgress
             variant="determinate"
@@ -2491,9 +3146,18 @@ const MusicSessionPage: React.FC = () => {
             <Typography variant="body2" color="text.secondary">
               {currentStep ? `${currentStep.order} de ${steps.length} etapas` : 'Preparando etapa'}
             </Typography>
-            <Typography variant="body2" color="primary" fontWeight="bold">
-              {selectedPackageConfig.label} • {currentStep?.musicName || 'Fluxo padrão'}
-            </Typography>
+            <Box sx={{ textAlign: 'center', minWidth: 220 }}>
+              <Typography variant="body2" color="primary" fontWeight="bold">
+                {selectedPackageConfig.label} • {currentStep?.musicName || 'Fluxo padrão'}
+              </Typography>
+              <Typography
+                variant="h6"
+                component="h1"
+                sx={{ mt: 0.35, fontWeight: 600, letterSpacing: '-0.02em', lineHeight: 1.1, textAlign: 'center' }}
+              >
+                Sessão de Música
+              </Typography>
+            </Box>
           </Box>
         </Box>
 
@@ -2505,46 +3169,68 @@ const MusicSessionPage: React.FC = () => {
 
         {currentStep && (
           <>
-            <Box
-              sx={{
-                mb: currentStep.type === 'phrase' ? 2 : 3,
-                textAlign: currentStep.type === 'phrase' ? 'center' : 'left',
-              }}
-            >
-              <Typography variant={currentStep.type === 'phrase' ? 'h4' : 'h5'}>
-                {currentStep.title}
-              </Typography>
-              <Typography
-                variant={currentStep.type === 'phrase' ? 'body1' : 'body2'}
-                color="text.secondary"
-                sx={{
-                  mt: 0.75,
-                  maxWidth: currentStep.type === 'phrase' ? 760 : 'none',
-                  mx: currentStep.type === 'phrase' ? 'auto' : 0,
-                }}
-              >
-                {describeStep(currentStep)}
-              </Typography>
-            </Box>
-
-            {stepCountdown !== null && currentStep.type !== 'phrase' && (
+            {currentStep.type !== 'phrase' && !(currentStep.type === 'record' && isRecordPreStart && stepCountdown === null) && (
               <Paper
-                variant="outlined"
+                elevation={0}
                 sx={{
                   mb: 3,
-                  p: 3,
-                  textAlign: 'center',
                   borderRadius: 3,
-                  bgcolor: 'action.hover',
+                  p: { xs: 2, md: 2.5 },
+                  background: currentStepTheme.surface,
+                  border: `1px solid ${currentStepTheme.accent}22`,
+                  textAlign: 'left',
                 }}
               >
                 <Typography
+                  variant="overline"
+                  sx={{
+                    letterSpacing: '0.12em',
+                    color: currentStepTheme.accent,
+                    fontWeight: 800,
+                  }}
+                >
+                  {currentStepTheme.eyebrow}
+                </Typography>
+                <Typography variant="h5" sx={{ mt: 0.25 }}>
+                  {currentStep.title}
+                </Typography>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{
+                    mt: 0.75,
+                    maxWidth: 'none',
+                    mx: 0,
+                  }}
+                >
+                  {describeStep(currentStep)}
+                </Typography>
+              </Paper>
+            )}
+
+            {stepCountdown !== null && currentStep.type !== 'phrase' && (
+              <Box
+                sx={{
+                  mb: 3,
+                  px: 2,
+                  py: { xs: 4, md: 5 },
+                  textAlign: 'center',
+                  borderRadius: 3,
+                  background: 'radial-gradient(circle at center, rgba(25,118,210,0.18), rgba(25,118,210,0.03) 65%)',
+                  border: '1px solid rgba(25,118,210,0.18)',
+                }}
+              >
+                <Typography variant="overline" sx={{ letterSpacing: '0.14em', color: 'primary.main', fontWeight: 800 }}>
+                  {countdownLabel || 'Preparando'}
+                </Typography>
+                <Typography
                   variant="h1"
                   sx={{
-                    fontSize: '5rem',
+                    fontSize: { xs: '5.5rem', md: '7rem' },
                     fontWeight: 900,
                     lineHeight: 1,
                     color: 'primary.main',
+                    textShadow: '0 12px 32px rgba(25,118,210,0.22)',
                   }}
                 >
                   {stepCountdown}
@@ -2556,7 +3242,7 @@ const MusicSessionPage: React.FC = () => {
                       ? 'Contagem inicial do metrônomo em andamento.'
                       : 'A gravação da música vai começar em instantes.'}
                 </Typography>
-              </Paper>
+              </Box>
             )}
 
             {isLoadingCurrentMusic && currentStep.type !== 'phrase' ? (
@@ -2626,6 +3312,7 @@ const MusicSessionPage: React.FC = () => {
                           }}
                         >
                           <IconButton
+                            ref={dyslexicButtonRef}
                             onClick={() => setIsDyslexicFont(previous => !previous)}
                             color={isDyslexicFont ? 'primary' : 'default'}
                             title="Fonte para dislexia"
@@ -2634,6 +3321,7 @@ const MusicSessionPage: React.FC = () => {
                             <FontDownloadIcon />
                           </IconButton>
                           <IconButton
+                            ref={contrastButtonRef}
                             onClick={() => setIsHighContrast(previous => !previous)}
                             color={isHighContrast ? 'primary' : 'default'}
                             title="Alto contraste"
@@ -2642,6 +3330,7 @@ const MusicSessionPage: React.FC = () => {
                             <ContrastIcon />
                           </IconButton>
                           <Button
+                            ref={fontSizeButtonRef}
                             size="small"
                             variant="outlined"
                             onClick={() => setPhraseFontSize(previous => Math.max(18, previous - 4))}
@@ -2662,6 +3351,7 @@ const MusicSessionPage: React.FC = () => {
 
                       <Typography variant="body2" color="text.secondary" sx={{ mb: 1.25 }}>
                         Você pode trocar esta frase até 3 vezes.
+                        {` Trocas usadas: ${skipCount}/3.`}
                       </Typography>
 
                       <Typography
@@ -2739,9 +3429,13 @@ const MusicSessionPage: React.FC = () => {
                           mode="mic"
                           canvasRef={canvasRef}
                           dbfs={dbfs}
-                          isActive={isRecording && !isMicPaused}
+                          isActive={(isRecording && !isMicPaused) || micPreviewReady}
                         />
+                      </>
+                    )}
 
+                    {!isRecordPreStart && (
+                      <>
                         {selectedMonitorUrl ? (
                           <AudioVisualizer
                             mode="music"
@@ -2761,29 +3455,50 @@ const MusicSessionPage: React.FC = () => {
 
                     {showRecordSetup ? (
                       <Stack spacing={2}>
-                        {isRecordPreStart && (
-                          <Paper
-                            variant="outlined"
-                            sx={{
-                              p: { xs: 2.5, md: 3 },
-                              borderRadius: 3,
-                              bgcolor: 'rgba(46, 125, 50, 0.06)',
-                              borderColor: 'success.light',
-                            }}
-                          >
-                            <Typography variant="h6" color="success.main">
-                              Como começar a gravar
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                              1. Escolha abaixo o áudio que vai tocar no seu fone.
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                              2. Ligue o metrônomo só se fizer sentido para esta música.
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                              3. Quando estiver pronto, clique no botão verde <strong>Começar gravação</strong>.
-                            </Typography>
-                          </Paper>
+                        <Paper
+                          variant="outlined"
+                          sx={{
+                            p: { xs: 1.75, md: 2 },
+                            borderRadius: 3,
+                            bgcolor: 'rgba(46,125,50,0.04)',
+                            borderColor: 'rgba(46,125,50,0.16)',
+                          }}
+                        >
+                          <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'success.dark', mb: 1.25 }}>
+                            Como esta etapa funciona
+                          </Typography>
+                          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, gap: 1.25 }}>
+                            {[
+                              '1. Escolha o que vai ouvir no fone.',
+                              '2. Ajuste o metrônomo se precisar.',
+                              '3. Clique no botão verde para começar.',
+                            ].map((item) => (
+                              <Paper
+                                key={item}
+                                variant="outlined"
+                                sx={{
+                                  p: 1.5,
+                                  borderRadius: 2.5,
+                                  bgcolor: 'rgba(255,255,255,0.72)',
+                                  borderColor: 'rgba(46,125,50,0.12)',
+                                }}
+                              >
+                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                  {item}
+                                </Typography>
+                              </Paper>
+                            ))}
+                          </Box>
+                        </Paper>
+
+                        {micPreviewLoading ? (
+                          <Box sx={{ display: 'flex', justifyContent: 'center', py: 1 }}>
+                            <CircularProgress size={26} />
+                          </Box>
+                        ) : (
+                          <Alert severity={micSignalDetected ? 'success' : 'warning'}>
+                            {micSignalDetected ? 'Microfone detectado.' : 'Sem sinal de voz no momento.'}
+                          </Alert>
                         )}
 
                         <Box
@@ -2794,10 +3509,13 @@ const MusicSessionPage: React.FC = () => {
                           }}
                         >
                           <Paper variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
-                            <Typography variant="h6" sx={{ mb: 1.5 }}>
+                            <Typography variant="overline" sx={{ color: 'primary.main', fontWeight: 800, letterSpacing: '0.08em' }}>
+                              Áudio de apoio
+                            </Typography>
+                            <Typography variant="h6" sx={{ mb: 0.75 }}>
                               1. O que você quer ouvir
                             </Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2.25 }}>
                               Esse áudio é só para te orientar enquanto canta. Ele não entra no arquivo final.
                             </Typography>
 
@@ -2815,10 +3533,10 @@ const MusicSessionPage: React.FC = () => {
                                 >
                                   <MenuItem value="none">Sem música de fundo</MenuItem>
                                   {currentMusicDetail?.vocal_audio_url && (
-                                    <MenuItem value="vocal">Música original com voz</MenuItem>
+                                    <MenuItem value="vocal">Original com voz</MenuItem>
                                   )}
                                   {currentMusicDetail?.instrumental_audio_url && (
-                                    <MenuItem value="instrumental">Instrumental da música</MenuItem>
+                                    <MenuItem value="instrumental">Instrumental</MenuItem>
                                   )}
                                 </Select>
                                 <FormHelperText>
@@ -2826,28 +3544,46 @@ const MusicSessionPage: React.FC = () => {
                                 </FormHelperText>
                               </FormControl>
 
-                              <FormControlLabel
-                                control={(
-                                  <Switch
-                                    checked={voiceMonitoring}
-                                    disabled={stepCountdown !== null || (hasStartedCurrentTake && !isMicPaused)}
-                                    onChange={(event) => setVoiceMonitoring(event.target.checked)}
-                                  />
-                                )}
-                                label="Ouvir minha própria voz durante o canto"
-                              />
-
-                              <Typography variant="body2" color="text.secondary">
-                                Ative isso apenas se quiser retorno local da sua voz no fone.
-                              </Typography>
+                              <Paper
+                                variant="outlined"
+                                sx={{
+                                  p: 1.5,
+                                  borderRadius: 2.5,
+                                  bgcolor: 'background.default',
+                                }}
+                              >
+                                <FormControlLabel
+                                  sx={{ m: 0, alignItems: 'flex-start' }}
+                                  control={(
+                                    <Switch
+                                      checked={voiceMonitoring}
+                                      disabled={stepCountdown !== null || (hasStartedCurrentTake && !isMicPaused)}
+                                      onChange={(event) => setVoiceMonitoring(event.target.checked)}
+                                    />
+                                  )}
+                                  label={(
+                                    <Box>
+                                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                        Ouvir minha própria voz durante o canto
+                                      </Typography>
+                                      <Typography variant="caption" color="text.secondary">
+                                        Ative isso apenas se quiser retorno local da sua voz no fone.
+                                      </Typography>
+                                    </Box>
+                                  )}
+                                />
+                              </Paper>
                             </Stack>
                           </Paper>
 
-                          <Paper variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
-                            <Typography variant="h6" sx={{ mb: 1.5 }}>
+                          <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: 'rgba(25,118,210,0.03)' }}>
+                            <Typography variant="overline" sx={{ color: 'primary.main', fontWeight: 800, letterSpacing: '0.08em' }}>
+                              Ritmo
+                            </Typography>
+                            <Typography variant="h6" sx={{ mb: 0.75 }}>
                               2. Metrônomo opcional
                             </Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2.25 }}>
                               Essas opções valem só para esta gravação e podem ser ajustadas livremente.
                             </Typography>
 
@@ -2871,26 +3607,34 @@ const MusicSessionPage: React.FC = () => {
                                 label="Usar metrônomo"
                               />
 
-                              <TextField
-                                label="BPM da sessão"
-                                type="number"
-                                value={metronomeConfig.bpm}
-                                disabled={stepCountdown !== null || !metronomeConfig.enabled || (hasStartedCurrentTake && !isMicPaused)}
-                                onChange={(event) => {
-                                  const value = event.target.value;
-                                  setMetronomeConfig(previous => ({ ...previous, bpm: value }));
+                              <Box
+                                sx={{
+                                  display: 'grid',
+                                  gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(140px, 0.7fr)' },
+                                  gap: 1.5,
                                 }}
-                                helperText="Carregado da música, mas editável só nesta gravação."
-                                fullWidth
-                              />
+                              >
+                                <TextField
+                                  label="BPM da sessão"
+                                  type="number"
+                                  value={metronomeConfig.bpm}
+                                  disabled={stepCountdown !== null || !metronomeConfig.enabled || (hasStartedCurrentTake && !isMicPaused)}
+                                  onChange={(event) => {
+                                    const value = event.target.value;
+                                    setMetronomeConfig(previous => ({ ...previous, bpm: value }));
+                                  }}
+                                  helperText="Carregado da música, mas editável só nesta gravação."
+                                  fullWidth
+                                />
 
-                              <TextField
-                                label="Compasso"
-                                value={metronomeConfig.timeSignature}
-                                disabled
-                                helperText="Carregado automaticamente da música."
-                                fullWidth
-                              />
+                                <TextField
+                                  label="Compasso"
+                                  value={metronomeConfig.timeSignature}
+                                  disabled
+                                  helperText="Carregado automaticamente da música."
+                                  fullWidth
+                                />
+                              </Box>
 
                               <FormControl fullWidth disabled={stepCountdown !== null || !metronomeConfig.enabled || (hasStartedCurrentTake && !isMicPaused)}>
                                 <InputLabel id="metronome-countin-label">Contagem inicial</InputLabel>
@@ -2911,7 +3655,7 @@ const MusicSessionPage: React.FC = () => {
                                 </Select>
                               </FormControl>
 
-                              <Box>
+                              <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2.5, bgcolor: 'background.paper' }}>
                                 <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                                   Volume do metrônomo: {metronomeConfig.volume}%
                                 </Typography>
@@ -2929,9 +3673,9 @@ const MusicSessionPage: React.FC = () => {
                                   }}
                                   valueLabelDisplay="auto"
                                 />
-                              </Box>
+                              </Paper>
 
-                              <Alert severity="warning">
+                              <Alert severity="warning" sx={{ borderRadius: 2.5 }}>
                                 Para evitar que o metrônomo apareça na gravação, use fones de ouvido.
                               </Alert>
                             </Stack>
@@ -2967,10 +3711,29 @@ const MusicSessionPage: React.FC = () => {
             )}
           </>
         )}
+      </Paper>
 
-        <Box mt={4} display="flex" flexWrap="wrap" justifyContent="space-between" gap={2}>
+      <Paper
+        elevation={6}
+        sx={{
+          position: 'sticky',
+          bottom: 12,
+          zIndex: 20,
+          mt: 3,
+          mb: 2,
+          p: 2,
+          borderRadius: 3,
+          border: '1px solid',
+          borderColor: 'rgba(94,209,255,0.16)',
+          bgcolor: 'rgba(16,18,23,0.96)',
+          color: '#f8fbff',
+          backdropFilter: 'blur(8px)',
+        }}
+      >
+        <Box display="flex" flexWrap="wrap" justifyContent="space-between" gap={2}>
           <Box display="flex" flexWrap="wrap" gap={2}>
             <Button
+              ref={backButtonRef}
               variant="outlined"
               startIcon={<ArrowBackIcon />}
               onClick={() => {
@@ -2981,11 +3744,12 @@ const MusicSessionPage: React.FC = () => {
               Voltar
             </Button>
 
-            <Button variant="outlined" onClick={() => { void handleRestartCurrentStep(); }} disabled={isProcessing || !currentStep || stepCountdown !== null}>
+            <Button ref={restartButtonRef} variant="outlined" onClick={() => { void handleRestartCurrentStep(); }} disabled={isProcessing || !currentStep || stepCountdown !== null}>
               {restartLabel}
             </Button>
 
             <Button
+              ref={mainActionButtonRef}
               variant={emphasizeRecordStart ? 'contained' : 'outlined'}
               color={emphasizeRecordStart ? 'success' : 'primary'}
               startIcon={<PlayArrowIcon />}
@@ -3000,6 +3764,7 @@ const MusicSessionPage: React.FC = () => {
 
           <Box display="flex" flexWrap="wrap" gap={2}>
             <Button
+              ref={skipButtonRef}
               variant="outlined"
               color="warning"
               startIcon={<SkipNextIcon />}
@@ -3012,11 +3777,12 @@ const MusicSessionPage: React.FC = () => {
             </Button>
 
             <Button
+              ref={saveButtonRef}
               variant="contained"
               onClick={() => {
                 void handleSaveCurrentStep();
               }}
-              disabled={isProcessing || (currentStep?.type !== 'listen' && !hasStartedCurrentTake)}
+              disabled={isProcessing || (currentStep?.type !== 'listen' && !hasStartedCurrentTake && !pendingReviewBlob)}
             >
               {isProcessing ? <CircularProgress size={24} color="inherit" /> : saveLabel}
             </Button>
