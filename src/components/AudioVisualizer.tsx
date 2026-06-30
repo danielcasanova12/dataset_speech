@@ -14,17 +14,9 @@ interface AudioVisualizerProps {
   musicLabel?: string;
 }
 
-const getDbfsColor = (dbfs: number) => {
-  if (!Number.isFinite(dbfs) || dbfs <= -35) return '#666';
-  if (dbfs > -12) return '#f44336';
-  if (dbfs > -25) return '#ffeb3b';
-  return '#4caf50';
-};
-
 const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
   mode,
   canvasRef,
-  dbfs = -100,
   isActive = false,
   musicProgress = 0,
   musicLabel = 'Reproduzindo música',
@@ -36,19 +28,7 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
           <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'text.secondary' }}>
             MICROFONE
           </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {isActive && <GraphicEqIcon sx={{ color: 'primary.main' }} />}
-            <Box
-              sx={{
-                width: 18,
-                height: 18,
-                borderRadius: '50%',
-                bgcolor: getDbfsColor(dbfs),
-                boxShadow: dbfs > -35 ? `0 0 14px ${getDbfsColor(dbfs)}` : 'none',
-                border: '1px solid #555',
-              }}
-            />
-          </Box>
+          {isActive && <GraphicEqIcon sx={{ color: 'primary.main' }} />}
         </Box>
         <Paper elevation={0} sx={{ height: 104, bgcolor: '#1e1e1e', borderRadius: 2, overflow: 'hidden' }}>
           <canvas ref={canvasRef} width="600" height="100" style={{ width: '100%', height: '100%' }} />
