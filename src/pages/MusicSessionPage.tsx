@@ -27,6 +27,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ContrastIcon from '@mui/icons-material/Contrast';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import FontDownloadIcon from '@mui/icons-material/FontDownload';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
 import AudioVisualizer from '../components/AudioVisualizer';
@@ -66,6 +67,13 @@ interface MetronomeConfig {
   timeSignature: string;
   countInBars: CountInOption;
   volume: number;
+}
+
+interface MusicStepTutorial {
+  key: string;
+  title: string;
+  description: string;
+  tips: string[];
 }
 
 interface SessionStepBase {
@@ -409,6 +417,71 @@ const buildPhraseDrafts = ({
   }));
 };
 
+const getMusicStepTutorial = (step: SessionStep): MusicStepTutorial => {
+  if (step.type === 'listen') {
+    return {
+      key: `listen-${step.musicId ?? step.id}`,
+      title: `Ouvir música original: ${step.musicName || 'Música'}`,
+      description: 'Agora você vai ouvir a música original antes de gravar.',
+      tips: [
+        'O sistema mostra a contagem 3, 2, 1 e começa a tocar sozinho.',
+        'Escute a referência com atenção para entrar no clima da música.',
+        'Se quiser, você pode ouvir de novo ou seguir para a gravação.',
+      ],
+    };
+  }
+
+  if (step.type === 'record') {
+    return {
+      key: `record-${step.musicId ?? step.id}`,
+      title: `Gravar música: ${step.musicName || 'Música'}`,
+      description: 'Agora você configura o que vai ouvir e inicia a gravação cantada.',
+      tips: [
+        'Escolha o áudio de referência e, se quiser, ative o retorno da sua própria voz.',
+        'Ajuste o metrônomo apenas se precisar nesta música.',
+        'Quando estiver pronto, clique no botão verde para começar a gravação.',
+      ],
+    };
+  }
+
+  if (step.category === 'neutral') {
+    return {
+      key: 'phrase-neutral',
+      title: 'Frase neutra',
+      description: 'Agora você vai ver frases neutras para aquecer a voz e entrar no fluxo da sessão.',
+      tips: [
+        'Leia a frase com naturalidade, como se estivesse falando normalmente.',
+        'Você pode trocar a frase até 3 vezes se não gostar da atual.',
+        'Também pode ajustar tamanho, contraste e fonte para facilitar a leitura.',
+      ],
+    };
+  }
+
+  if (step.category === 'emotional') {
+    return {
+      key: `phrase-emotional-${step.helperText.toLowerCase()}`,
+      title: step.title,
+      description: 'Agora você vai ver frases para interpretar com a emoção indicada na tela.',
+      tips: [
+        `A emoção desta parte é ${step.helperText.toLowerCase()}.`,
+        'Leia a frase deixando a emoção aparecer na voz.',
+        'Ajuste a visualização se precisar e avance quando terminar.',
+      ],
+    };
+  }
+
+  return {
+    key: `phrase-lyric-${step.musicId ?? step.id}`,
+    title: step.title,
+    description: 'Agora você vai ver trechos ligados à música antes de entrar na parte cantada.',
+    tips: [
+      'Leia o texto que aparece na tela com clareza.',
+      'Use esta etapa para se conectar com a letra e com a intenção da música.',
+      'Depois disso, a sessão segue para ouvir e gravar a canção.',
+    ],
+  };
+};
+
 const MusicSessionPage: React.FC = () => {
   const navigate = useNavigate();
 
@@ -431,6 +504,9 @@ const MusicSessionPage: React.FC = () => {
   const [showExistingSessionModal, setShowExistingSessionModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showFinishModal, setShowFinishModal] = useState(false);
+  const [showStepTutorialModal, setShowStepTutorialModal] = useState(false);
+  const [stepTutorialContent, setStepTutorialContent] = useState<MusicStepTutorial | null>(null);
+  const [stepTutorialVersion, setStepTutorialVersion] = useState(0);
   const [isLoadingCurrentMusic, setIsLoadingCurrentMusic] = useState(false);
   const [previewVisibleIds, setPreviewVisibleIds] = useState<number[]>([]);
   const [previewLoadingIds, setPreviewLoadingIds] = useState<number[]>([]);
@@ -470,6 +546,7 @@ const MusicSessionPage: React.FC = () => {
   const loadedAudioUrlRef = useRef<string | null>(null);
   const pendingStepsRef = useRef<SessionStep[]>([]);
   const musicDetailsRef = useRef<Record<number, MusicDetails>>({});
+  const seenTutorialKeysRef = useRef<Set<string>>(new Set());
 
   const currentStep = steps[currentStepIndex] || null;
   const currentStepId = currentStep?.id || null;
@@ -1732,6 +1809,15 @@ const MusicSessionPage: React.FC = () => {
     setSetupError(null);
   }, []);
 
+  const handleCloseStepTutorial = useCallback(() => {
+    if (stepTutorialContent) {
+      seenTutorialKeysRef.current.add(stepTutorialContent.key);
+    }
+
+    setShowStepTutorialModal(false);
+    setStepTutorialVersion(previous => previous + 1);
+  }, [stepTutorialContent]);
+
   const handlePackageChange = useCallback((packageKey: SessionPackageKey) => {
     const nextConfig = getPackageConfig(packageKey);
     const nextSelectedIds = nextConfig.maxSongs === null
@@ -1802,6 +1888,7 @@ const MusicSessionPage: React.FC = () => {
 
     let cancelled = false;
     let timeoutId: number | undefined;
+    const currentTutorial = currentStep ? getMusicStepTutorial(currentStep) : null;
 
     clearStepCountdown();
     stopMusicPlayback(true);
@@ -1813,6 +1900,20 @@ const MusicSessionPage: React.FC = () => {
 
     if (currentStepType !== 'record') {
       setVoiceMonitoring(false);
+    }
+
+    if (showStepTutorialModal) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (currentTutorial && !seenTutorialKeysRef.current.has(currentTutorial.key)) {
+      setStepTutorialContent(currentTutorial);
+      setShowStepTutorialModal(true);
+      return () => {
+        cancelled = true;
+      };
     }
 
     if (currentStepType === 'phrase') {
@@ -1866,7 +1967,7 @@ const MusicSessionPage: React.FC = () => {
       clearStepCountdown();
       stopMetronome();
     };
-  }, [beginStepCountdown, clearStepCountdown, currentStepId, currentStepMusicId, currentStepType, ensureMusicDetails, playAudioUrl, resetTakeState, startRecording, stopMetronome, stopMusicPlayback]);
+  }, [beginStepCountdown, clearStepCountdown, currentStep, currentStepId, currentStepMusicId, currentStepType, ensureMusicDetails, playAudioUrl, resetTakeState, showStepTutorialModal, startRecording, stepTutorialVersion, stopMetronome, stopMusicPlayback]);
 
   useEffect(() => {
     if (!isRecording || isMicPaused) return;
@@ -2319,6 +2420,34 @@ const MusicSessionPage: React.FC = () => {
 
   return (
     <Container maxWidth="lg">
+      <Modal open={showStepTutorialModal && !!stepTutorialContent} onClose={handleCloseStepTutorial}>
+        <Box sx={{ ...modalStyle, p: 0, overflow: 'hidden', borderRadius: 2, width: 560, maxWidth: 'calc(100vw - 32px)' }}>
+          <Box sx={{ bgcolor: 'primary.main', color: 'primary.contrastText', p: 2, display: 'flex', alignItems: 'center' }}>
+            <InfoOutlinedIcon sx={{ mr: 1 }} />
+            <Typography variant="h6">{stepTutorialContent?.title}</Typography>
+          </Box>
+          <Box sx={{ p: 3 }}>
+            <Typography sx={{ mt: 1, fontSize: '1.05rem' }}>
+              {stepTutorialContent?.description}
+            </Typography>
+
+            <Stack spacing={1.25} sx={{ mt: 3 }}>
+              {stepTutorialContent?.tips.map((tip) => (
+                <Typography key={tip} variant="body2" color="text.secondary">
+                  • {tip}
+                </Typography>
+              ))}
+            </Stack>
+
+            <Box sx={{ mt: 4, display: 'flex', justifyContent: 'flex-end' }}>
+              <Button onClick={handleCloseStepTutorial} variant="contained" size="large">
+                Entendi
+              </Button>
+            </Box>
+          </Box>
+        </Box>
+      </Modal>
+
       <Modal open={showCancelModal} onClose={() => setShowCancelModal(false)}>
         <Box sx={modalStyle}>
           <Typography variant="h6">Cancelar sessão de música</Typography>
