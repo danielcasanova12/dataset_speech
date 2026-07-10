@@ -70,6 +70,14 @@ export interface LoginResponse {
   token_type: string;
 }
 
+export interface CurrentUser {
+  id: string;
+  email: string;
+  is_active: boolean;
+  is_superuser: boolean;
+  is_verified: boolean;
+}
+
 export interface SessionResponse {
   id: number;
   user_id: string;
@@ -140,6 +148,19 @@ export const api = {
         const errorData = await response.json();
         throw new Error(JSON.stringify(errorData) || 'Registration failed');
     }
+  },
+
+  getCurrentUser: async (): Promise<CurrentUser> => {
+    const response = await secureFetch(`${API_BASE_URL}/users/me`, {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error('Não foi possível carregar o usuário atual.');
+    }
+
+    return response.json();
   },
 
   createSession: async (

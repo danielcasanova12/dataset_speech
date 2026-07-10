@@ -5,6 +5,7 @@ import {
   Button,
   CircularProgress,
   Container,
+  Divider,
   FormControl,
   FormControlLabel,
   FormHelperText,
@@ -23,6 +24,8 @@ import {
 } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material/Select';
 import { Link, useNavigate } from 'react-router-dom';
+import AddIcon from '@mui/icons-material/Add';
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ContrastIcon from '@mui/icons-material/Contrast';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
@@ -32,6 +35,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
 import AudioVisualizer from '../components/AudioVisualizer';
 import { api, MusicDetails, MusicListItem, SessionResponse } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 type PhraseCategory = 'neutral' | 'emotional' | 'lyric';
 type MonitorMode = 'none' | 'vocal' | 'instrumental';
@@ -62,6 +66,16 @@ interface SetupFormState {
   searchTerm: string;
   genreFilter: string;
   sortBy: MusicSortOption;
+}
+
+interface MusicAdminFormState {
+  nome: string;
+  genero: string;
+  texto: string;
+  bpm: string;
+  timeSignature: string;
+  vocalAudioFile: File | null;
+  instrumentalAudioFile: File | null;
 }
 
 interface MetronomeConfig {
@@ -180,6 +194,16 @@ const createInitialSetup = (): SetupFormState => ({
   searchTerm: '',
   genreFilter: '',
   sortBy: 'selected',
+});
+
+const createInitialMusicAdminForm = (): MusicAdminFormState => ({
+  nome: '',
+  genero: '',
+  texto: '',
+  bpm: '',
+  timeSignature: '4/4',
+  vocalAudioFile: null,
+  instrumentalAudioFile: null,
 });
 
 const audioBufferToWav = (buffer: AudioBuffer): Blob => {
@@ -591,11 +615,16 @@ const TutorialTooltip: React.FC<{
 
 const MusicSessionPage: React.FC = () => {
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
 
   const [setup, setSetup] = useState<SetupFormState>(() => createInitialSetup());
   const [setupStage, setSetupStage] = useState<SetupStage>('package');
   const [musics, setMusics] = useState<MusicListItem[]>([]);
   const [musicDetails, setMusicDetails] = useState<Record<number, MusicDetails>>({});
+  const [showMusicAdminPanel, setShowMusicAdminPanel] = useState(false);
+  const [musicAdminForm, setMusicAdminForm] = useState<MusicAdminFormState>(() => createInitialMusicAdminForm());
+  const [isSavingMusic, setIsSavingMusic] = useState(false);
+  const [musicAdminStatus, setMusicAdminStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [neutralPhrasePool, setNeutralPhrasePool] = useState<string[]>([]);
   const [emotionPhraseGroups, setEmotionPhraseGroups] = useState<EmotionPhraseGroup[]>([]);
   const [steps, setSteps] = useState<SessionStep[]>([]);
@@ -2214,6 +2243,76 @@ const MusicSessionPage: React.FC = () => {
     }
   }, [ensureMusicDetails, previewVisibleIds]);
 
+  const handleMusicAdminFieldChange = useCallback((field: keyof MusicAdminFormState, value: string | File | null) => {
+    setMusicAdminForm(previous => ({
+      ...previous,
+      [field]: value,
+    }));
+    setMusicAdminStatus(null);
+  }, []);
+
+  const handleCreateMusic = useCallback(async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    const nome = musicAdminForm.nome.trim();
+    const genero = musicAdminForm.genero.trim();
+    const timeSignature = musicAdminForm.timeSignature.trim();
+    const bpmText = musicAdminForm.bpm.trim();
+    const parsedBpm = bpmText ? Number(bpmText) : null;
+
+    if (!nome || !genero) {
+      setMusicAdminStatus({ type: 'error', message: 'Informe o nome e o gênero da música.' });
+      return;
+    }
+
+    if (bpmText && (parsedBpm === null || !Number.isFinite(parsedBpm) || parsedBpm <= 0)) {
+      setMusicAdminStatus({ type: 'error', message: 'Informe um BPM válido ou deixe o campo vazio.' });
+      return;
+    }
+
+    const bpm = parsedBpm;
+
+    setIsSavingMusic(true);
+    setMusicAdminStatus(null);
+
+    try {
+      const createdMusic = await api.createMusic({
+        nome,
+        genero,
+        texto: musicAdminForm.texto.trim(),
+        bpm,
+        time_signature: timeSignature || null,
+        vocal_audio_file: musicAdminForm.vocalAudioFile,
+        instrumental_audio_file: musicAdminForm.instrumentalAudioFile,
+      });
+
+      setMusics(previous => [
+        createdMusic,
+        ...previous.filter(item => item.id !== createdMusic.id),
+      ]);
+      setMusicDetails(previous => ({
+        ...previous,
+        [createdMusic.id]: createdMusic,
+      }));
+      musicDetailsRef.current = {
+        ...musicDetailsRef.current,
+        [createdMusic.id]: createdMusic,
+      };
+
+      setSetup(previous => ({
+        ...previous,
+        sortBy: 'recent',
+      }));
+      setMusicAdminForm(createInitialMusicAdminForm());
+      setMusicAdminStatus({ type: 'success', message: 'Música adicionada com sucesso.' });
+    } catch (error: any) {
+      console.error('Falha ao cadastrar música:', error);
+      setMusicAdminStatus({ type: 'error', message: error.message || 'Não foi possível adicionar a música.' });
+    } finally {
+      setIsSavingMusic(false);
+    }
+  }, [musicAdminForm]);
+
   useEffect(() => {
     void loadSetupData();
   }, [loadSetupData]);
@@ -2701,11 +2800,33 @@ const MusicSessionPage: React.FC = () => {
                   <Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 }, borderRadius: 3 }}>
                     <Stack spacing={2}>
                       <Box>
-                        <Typography variant="h6">
-                          2. Escolha as músicas
-                        </Typography>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                          <Box>
+                            <Typography variant="h6">
+                              2. Escolha as músicas
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                              Pacote {selectedPackageConfig.label.toLowerCase()}: {formatPackageRule(selectedPackageConfig)}.
+                            </Typography>
+                          </Box>
+
+                          {isAdmin && (
+                            <Button
+                              variant={showMusicAdminPanel ? 'contained' : 'outlined'}
+                              startIcon={showMusicAdminPanel ? <AdminPanelSettingsIcon /> : <AddIcon />}
+                              onClick={() => {
+                                setShowMusicAdminPanel(previous => !previous);
+                                setMusicAdminStatus(null);
+                              }}
+                            >
+                              {showMusicAdminPanel ? 'Fechar admin' : 'Adicionar música'}
+                            </Button>
+                          )}
+                        </Box>
                         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-                          Pacote {selectedPackageConfig.label.toLowerCase()}: {formatPackageRule(selectedPackageConfig)}.
+                          {isAdmin
+                            ? 'Como administrador, você pode cadastrar músicas sem sair desta tela.'
+                            : 'Selecione as músicas disponíveis para montar sua sessão.'}
                         </Typography>
                       </Box>
 
@@ -2713,6 +2834,145 @@ const MusicSessionPage: React.FC = () => {
                         <Alert severity="error">
                           {setupError}
                         </Alert>
+                      )}
+
+                      {isAdmin && showMusicAdminPanel && (
+                        <Paper
+                          component="form"
+                          variant="outlined"
+                          onSubmit={handleCreateMusic}
+                          sx={{
+                            p: { xs: 2, md: 2.5 },
+                            borderRadius: 3,
+                            bgcolor: 'rgba(25,118,210,0.04)',
+                            borderColor: 'rgba(25,118,210,0.22)',
+                          }}
+                        >
+                          <Stack spacing={2}>
+                            <Box>
+                              <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                                Cadastrar nova música
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary">
+                                Preencha os dados principais e envie os arquivos de áudio quando estiverem disponíveis.
+                              </Typography>
+                            </Box>
+
+                            {musicAdminStatus && (
+                              <Alert severity={musicAdminStatus.type}>
+                                {musicAdminStatus.message}
+                              </Alert>
+                            )}
+
+                            <Box
+                              sx={{
+                                display: 'grid',
+                                gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1.2fr) minmax(0, 0.8fr)' },
+                                gap: 2,
+                              }}
+                            >
+                              <TextField
+                                label="Nome da música"
+                                value={musicAdminForm.nome}
+                                onChange={(event) => handleMusicAdminFieldChange('nome', event.target.value)}
+                                required
+                                fullWidth
+                              />
+                              <TextField
+                                label="Gênero"
+                                value={musicAdminForm.genero}
+                                onChange={(event) => handleMusicAdminFieldChange('genero', event.target.value)}
+                                required
+                                fullWidth
+                              />
+                            </Box>
+
+                            <TextField
+                              label="Letra ou trechos para leitura"
+                              value={musicAdminForm.texto}
+                              onChange={(event) => handleMusicAdminFieldChange('texto', event.target.value)}
+                              multiline
+                              minRows={4}
+                              fullWidth
+                            />
+
+                            <Box
+                              sx={{
+                                display: 'grid',
+                                gridTemplateColumns: { xs: '1fr', sm: 'minmax(0, 0.8fr) minmax(0, 0.8fr)' },
+                                gap: 2,
+                              }}
+                            >
+                              <TextField
+                                label="BPM"
+                                type="number"
+                                value={musicAdminForm.bpm}
+                                onChange={(event) => handleMusicAdminFieldChange('bpm', event.target.value)}
+                                inputProps={{ min: 1 }}
+                                fullWidth
+                              />
+                              <TextField
+                                label="Compasso"
+                                placeholder="Ex.: 4/4"
+                                value={musicAdminForm.timeSignature}
+                                onChange={(event) => handleMusicAdminFieldChange('timeSignature', event.target.value)}
+                                fullWidth
+                              />
+                            </Box>
+
+                            <Divider />
+
+                            <Box
+                              sx={{
+                                display: 'grid',
+                                gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
+                                gap: 2,
+                              }}
+                            >
+                              <TextField
+                                label="Áudio original com voz"
+                                type="file"
+                                InputLabelProps={{ shrink: true }}
+                                inputProps={{ accept: 'audio/*' }}
+                                onChange={(event) => {
+                                  const input = event.target as HTMLInputElement;
+                                  handleMusicAdminFieldChange('vocalAudioFile', input.files?.[0] || null);
+                                }}
+                                helperText={musicAdminForm.vocalAudioFile?.name || 'Opcional'}
+                                fullWidth
+                              />
+                              <TextField
+                                label="Áudio instrumental"
+                                type="file"
+                                InputLabelProps={{ shrink: true }}
+                                inputProps={{ accept: 'audio/*' }}
+                                onChange={(event) => {
+                                  const input = event.target as HTMLInputElement;
+                                  handleMusicAdminFieldChange('instrumentalAudioFile', input.files?.[0] || null);
+                                }}
+                                helperText={musicAdminForm.instrumentalAudioFile?.name || 'Opcional'}
+                                fullWidth
+                              />
+                            </Box>
+
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1.5, flexWrap: 'wrap' }}>
+                              <Button
+                                type="button"
+                                variant="outlined"
+                                onClick={() => {
+                                  setMusicAdminForm(createInitialMusicAdminForm());
+                                  setMusicAdminStatus(null);
+                                }}
+                                disabled={isSavingMusic}
+                              >
+                                Limpar
+                              </Button>
+                              <Button type="submit" variant="contained" startIcon={<AddIcon />} disabled={isSavingMusic}>
+                                {isSavingMusic ? 'Salvando...' : 'Salvar música'}
+                              </Button>
+                            </Box>
+                          </Stack>
+                        </Paper>
                       )}
 
                       <Paper

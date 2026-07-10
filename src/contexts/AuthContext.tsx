@@ -4,6 +4,7 @@ import { useAutoLogout } from '../hooks/useAutoLogout';
 
 interface AuthContextType {
   isAuthenticated: boolean;
+  isAdmin: boolean;
   login: (username: string, password: string) => Promise<void>;
   register: (data: UserRegistrationData) => Promise<void>;
   logout: () => void;
@@ -15,6 +16,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // O token agora é gerenciado internamente pela API e pelo estado de autenticação
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!sessionStorage.getItem('is_auth'));
+  const [isAdmin, setIsAdmin] = useState<boolean>(sessionStorage.getItem('is_admin') === 'true');
   const [loginTime, setLoginTime] = useState<string | null>(localStorage.getItem('login_time'));
   const [activeSession, setActiveSession] = useState<{id: number, createdAt: string} | null>(null);
 
@@ -25,6 +27,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (storedToken) {
       setApiToken(storedToken);
       setIsAuthenticated(true);
+      api.getCurrentUser()
+        .then((user) => {
+          const nextIsAdmin = !!user.is_superuser;
+          sessionStorage.setItem('is_admin', String(nextIsAdmin));
+          setIsAdmin(nextIsAdmin);
+        })
+        .catch(() => {
+          sessionStorage.removeItem('is_admin');
+          setIsAdmin(false);
+        });
     }
     if (storedLoginTime) {
       setLoginTime(storedLoginTime);
@@ -34,9 +46,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const logout = useCallback(() => {
     sessionStorage.removeItem('access_token');
     sessionStorage.removeItem('is_auth');
+    sessionStorage.removeItem('is_admin');
     localStorage.removeItem('login_time');
     setApiToken(null);
     setIsAuthenticated(false);
+    setIsAdmin(false);
     setLoginTime(null);
     setActiveSession(null);
   }, []);
@@ -45,16 +59,29 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const response = await api.login(username, password);
       const newLoginTime = new Date().toISOString();
-      
+
+      setApiToken(response.access_token);
+      const currentUser = await api.getCurrentUser();
+      const nextIsAdmin = !!currentUser.is_superuser;
+
       // Armazenamos no sessionStorage (morre ao fechar a aba) e na memória da API
       sessionStorage.setItem('access_token', response.access_token);
       sessionStorage.setItem('is_auth', 'true');
+      sessionStorage.setItem('is_admin', String(nextIsAdmin));
       localStorage.setItem('login_time', newLoginTime);
-      
-      setApiToken(response.access_token);
+
       setIsAuthenticated(true);
+      setIsAdmin(nextIsAdmin);
       setLoginTime(newLoginTime);
     } catch (error) {
+      sessionStorage.removeItem('access_token');
+      sessionStorage.removeItem('is_auth');
+      sessionStorage.removeItem('is_admin');
+      localStorage.removeItem('login_time');
+      setApiToken(null);
+      setIsAuthenticated(false);
+      setIsAdmin(false);
+      setLoginTime(null);
       throw error;
     }
   };
@@ -83,7 +110,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   });
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, login, register, logout, setActiveSessionInfo }}>
+    <AuthContext.Provider value={{ isAuthenticated, isAdmin, login, register, logout, setActiveSessionInfo }}>
       {showWarning && (
         <div style={{
           position: 'fixed',
