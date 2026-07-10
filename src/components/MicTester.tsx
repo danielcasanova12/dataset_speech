@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Box, Typography, Select, MenuItem, FormControl, InputLabel, CircularProgress, Accordion, AccordionSummary, AccordionDetails } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import MicIcon from '@mui/icons-material/Mic';
@@ -17,6 +17,21 @@ const MicTester: React.FC<MicTesterProps> = ({ onMicStatusChange }) => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationRef = useRef<number>(0);
+
+  const stopStream = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+      animationRef.current = 0;
+    }
+  }, []);
 
   useEffect(() => {
     // Tenta pegar a lista inicial (pode requerer permissão prévia)
@@ -65,56 +80,9 @@ const MicTester: React.FC<MicTesterProps> = ({ onMicStatusChange }) => {
       navigator.mediaDevices.removeEventListener('devicechange', getDevices);
       stopStream();
     };
-  }, []);
+  }, [onMicStatusChange, stopStream]);
 
-  const stopStream = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-    }
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-    if (animationRef.current) {
-      cancelAnimationFrame(animationRef.current);
-    }
-  };
-
-  useEffect(() => {
-    if (!selectedDeviceId) return;
-
-    const startMic = async () => {
-      stopStream();
-      setError(null);
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: { deviceId: { exact: selectedDeviceId } }
-        });
-        streamRef.current = stream;
-
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-        const audioCtx = new AudioContextClass({ sampleRate: 8000 });
-        audioContextRef.current = audioCtx;
-        const analyser = audioCtx.createAnalyser();
-        analyserRef.current = analyser;
-        analyser.fftSize = 512;
-
-        const source = audioCtx.createMediaStreamSource(stream);
-        source.connect(analyser);
-
-        drawWave();
-        localStorage.setItem('selectedMicId', selectedDeviceId);
-      } catch (err) {
-        console.error("Erro ao iniciar microfone", err);
-        setError("Não foi possível acessar este microfone.");
-      }
-    };
-
-    startMic();
-  }, [selectedDeviceId]);
-
-  const drawWave = () => {
+  const drawWave = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const canvasCtx = canvas.getContext('2d');
@@ -160,7 +128,40 @@ const MicTester: React.FC<MicTesterProps> = ({ onMicStatusChange }) => {
     };
 
     draw();
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedDeviceId) return;
+
+    const startMic = async () => {
+      stopStream();
+      setError(null);
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { deviceId: { exact: selectedDeviceId } }
+        });
+        streamRef.current = stream;
+
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        const audioCtx = new AudioContextClass({ sampleRate: 8000 });
+        audioContextRef.current = audioCtx;
+        const analyser = audioCtx.createAnalyser();
+        analyserRef.current = analyser;
+        analyser.fftSize = 512;
+
+        const source = audioCtx.createMediaStreamSource(stream);
+        source.connect(analyser);
+
+        drawWave();
+        localStorage.setItem('selectedMicId', selectedDeviceId);
+      } catch (err) {
+        console.error("Erro ao iniciar microfone", err);
+        setError("Não foi possível acessar este microfone.");
+      }
+    };
+
+    startMic();
+  }, [drawWave, selectedDeviceId, stopStream]);
 
   return (
     <Box sx={{ width: '100%', maxWidth: 600, margin: 'auto', mt: 3, mb: 4 }}>

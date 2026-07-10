@@ -1,4 +1,4 @@
-export const API_BASE_URL = process.env.REACT_APP_API_URL ;
+export const API_BASE_URL = (process.env.REACT_APP_API_URL || '').replace(/\/+$/, '');
 
 // Gerenciador interno de token (Memória - mais seguro que localStorage)
 let memoryToken: string | null = null;
@@ -6,6 +6,8 @@ let memoryToken: string | null = null;
 export const setApiToken = (token: string | null) => {
   memoryToken = token;
 };
+
+const buildApiUrl = (path: string) => `${API_BASE_URL}${path}`;
 
 const getHeaders = (contentType: string | null = 'application/json') => {
   const headers: HeadersInit = {};
@@ -16,6 +18,39 @@ const getHeaders = (contentType: string | null = 'application/json') => {
     headers['Authorization'] = `Bearer ${memoryToken}`;
   }
   return headers;
+};
+
+const readResponseBody = async (response: Response): Promise<any> => {
+  const contentType = response.headers.get('content-type') || '';
+
+  if (contentType.includes('application/json')) {
+    return response.json().catch(() => null);
+  }
+
+  const text = await response.text().catch(() => '');
+  return text || null;
+};
+
+const getErrorMessage = async (response: Response, fallback: string): Promise<string> => {
+  const data = await readResponseBody(response);
+
+  if (!data) return fallback;
+
+  if (typeof data === 'string') return data;
+
+  const detail = data.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map(item => item?.msg || item?.message)
+      .filter(Boolean)
+      .join(' ') || fallback;
+  }
+  if (detail && typeof detail === 'object') {
+    return detail.message || detail.detail || JSON.stringify(detail);
+  }
+
+  return data.message || fallback;
 };
 
 // Wrapper para fetch para centralizar segurança e credenciais com lógica de retry e timeout
@@ -89,6 +124,11 @@ export interface SessionResponse {
   numero_frase: number;
 }
 
+export interface UserSession extends SessionResponse {
+  termos?: boolean;
+  recordings_count?: number;
+}
+
 export interface MusicListItem {
   id: number;
   nome: string;
@@ -121,15 +161,14 @@ export const api = {
     formData.append('username', username);
     formData.append('password', password);
 
-    const response = await secureFetch(`${API_BASE_URL}/auth/jwt/login`, {
+    const response = await secureFetch(buildApiUrl('/auth/jwt/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: formData,
     });
 
     if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Login failed');
+        throw new Error(await getErrorMessage(response, 'Login failed'));
     }
 
     const data = await response.json();
@@ -138,20 +177,19 @@ export const api = {
   },
 
   register: async (data: UserRegistrationData): Promise<void> => {
-    const response = await secureFetch(`${API_BASE_URL}/auth/register`, {
+    const response = await secureFetch(buildApiUrl('/auth/register'), {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(data),
     });
 
     if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(JSON.stringify(errorData) || 'Registration failed');
+        throw new Error(await getErrorMessage(response, 'Registration failed'));
     }
   },
 
   getCurrentUser: async (): Promise<CurrentUser> => {
-    const response = await secureFetch(`${API_BASE_URL}/users/me`, {
+    const response = await secureFetch(buildApiUrl('/users/me'), {
       method: 'GET',
       headers: getHeaders(),
     });
@@ -168,18 +206,18 @@ export const api = {
     termos: boolean,
     extra?: { session_type?: 'general' | 'music' }
   ): Promise<SessionResponse> => {
-    const response = await secureFetch(`${API_BASE_URL}/api/v1/sessions`, {
+    const response = await secureFetch(buildApiUrl('/api/v1/sessions'), {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ dataset_id, termos, ...extra }),
     });
 
     if (!response.ok) {
-        const errorData = await response.json();
-        const detail = errorData.detail;
-        if (response.status === 409 && errorData.detail?.session) {
+        const errorData = await readResponseBody(response);
+        const detail = errorData?.detail;
+        if (response.status === 409 && detail?.session) {
             const error = new Error(detail?.message || 'An active session already exists for this user.') as any;
-            error.session = errorData.detail.session;
+            error.session = detail.session;
             throw error;
         }
         if (typeof detail === 'string') {
@@ -188,14 +226,14 @@ export const api = {
         if (detail && typeof detail === 'object') {
           throw new Error(detail.message || detail.detail || 'Failed to create session');
         }
-        throw new Error('Failed to create session');
+        throw new Error(errorData?.message || 'Failed to create session');
     }
     return response.json();
   },
 
   // Simplificado: Todas as funções agora usam getHeaders() interno
   getSession: async (id: string): Promise<SessionResponse> => {
-    const response = await secureFetch(`${API_BASE_URL}/api/v1/sessions/${id}`, {
+    const response = await secureFetch(buildApiUrl(`/api/v1/sessions/${id}`), {
       method: 'GET',
       headers: getHeaders(),
     });
@@ -203,8 +241,21 @@ export const api = {
     return response.json();
   },
 
+  getUserSessions: async (userId: string): Promise<UserSession[]> => {
+    const response = await secureFetch(buildApiUrl(`/api/v1/sessions/active-${encodeURIComponent(userId)}`), {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, 'Não foi possível carregar as sessões do usuário.'));
+    }
+
+    return response.json();
+  },
+
   forgotPassword: async (email: string): Promise<void> => {
-    const response = await secureFetch(`${API_BASE_URL}/auth/forgot-password`, {
+    const response = await secureFetch(buildApiUrl('/auth/forgot-password'), {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ email }),
@@ -216,7 +267,7 @@ export const api = {
   },
 
   resetPassword: async (token: string, password: string): Promise<void> => {
-    const response = await secureFetch(`${API_BASE_URL}/auth/reset-password`, {
+    const response = await secureFetch(buildApiUrl('/auth/reset-password'), {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ token, password }),
@@ -228,7 +279,7 @@ export const api = {
   },
 
   put: async (path: string, data: any): Promise<any> => {
-    const response = await secureFetch(`${API_BASE_URL}/api/v1${path}`, {
+    const response = await secureFetch(buildApiUrl(`/api/v1${path}`), {
       method: 'PUT',
       headers: getHeaders(),
       body: JSON.stringify(data),
@@ -244,7 +295,7 @@ export const api = {
     }
 
     const querySuffix = query.toString() ? `?${query.toString()}` : '';
-    const response = await secureFetch(`${API_BASE_URL}/api/v1/musics${querySuffix}`, {
+    const response = await secureFetch(buildApiUrl(`/api/v1/musics${querySuffix}`), {
       method: 'GET',
       headers: getHeaders(),
     });
@@ -257,7 +308,7 @@ export const api = {
   },
 
   getMusic: async (id: number): Promise<MusicDetails> => {
-    const response = await secureFetch(`${API_BASE_URL}/api/v1/musics/${id}`, {
+    const response = await secureFetch(buildApiUrl(`/api/v1/musics/${id}`), {
       method: 'GET',
       headers: getHeaders(),
     });
@@ -282,15 +333,14 @@ export const api = {
     if (payload.vocal_audio_file) formData.append('vocal_audio_file', payload.vocal_audio_file);
     if (payload.instrumental_audio_file) formData.append('instrumental_audio_file', payload.instrumental_audio_file);
 
-    const response = await secureFetch(`${API_BASE_URL}/api/v1/musics`, {
+    const response = await secureFetch(buildApiUrl('/api/v1/musics'), {
       method: 'POST',
       headers: getHeaders(null),
       body: formData,
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || 'Não foi possível cadastrar a música.');
+      throw new Error(await getErrorMessage(response, 'Não foi possível cadastrar a música.'));
     }
 
     return response.json();
@@ -309,15 +359,14 @@ export const api = {
     if (payload.vocal_audio_file) formData.append('vocal_audio_file', payload.vocal_audio_file);
     if (payload.instrumental_audio_file) formData.append('instrumental_audio_file', payload.instrumental_audio_file);
 
-    const response = await secureFetch(`${API_BASE_URL}/api/v1/musics/${id}`, {
+    const response = await secureFetch(buildApiUrl(`/api/v1/musics/${id}`), {
       method: 'PATCH',
       headers: getHeaders(null),
       body: formData,
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || `Não foi possível atualizar a música ${id}.`);
+      throw new Error(await getErrorMessage(response, `Não foi possível atualizar a música ${id}.`));
     }
 
     return response.json();
@@ -360,22 +409,21 @@ export const api = {
     if (background_audio_url) formData.append('background_audio_url', background_audio_url);
     if (text_prompt) formData.append('text_prompt', text_prompt);
 
-    const response = await secureFetch(`${API_BASE_URL}/api/v1/recordings`, {
+    const response = await secureFetch(buildApiUrl('/api/v1/recordings'), {
       method: 'POST',
       headers: getHeaders(null), // null para deixar o browser definir boundary do FormData
       body: formData,
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(JSON.stringify(errorData.detail) || 'Failed to upload recording');
+      throw new Error(await getErrorMessage(response, 'Failed to upload recording'));
     }
     return response.json();
   },
 
   heartbeat: async (): Promise<void> => {
     try {
-      await fetch(`${API_BASE_URL}/`, { method: 'GET' });
+      await fetch(buildApiUrl('/'), { method: 'GET' });
     } catch (e) {
       console.warn('API Heartbeat failed:', e);
     }

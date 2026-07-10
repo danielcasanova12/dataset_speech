@@ -28,7 +28,7 @@
   "devDependencies": {
     "gh-pages": "^6.1.1"
   },
-"scripts": {
+  "scripts": {
     "dev": "npm run build && npm start",
     "start": "react-scripts start",
     "start:3001": "react-scripts start --port 3001",

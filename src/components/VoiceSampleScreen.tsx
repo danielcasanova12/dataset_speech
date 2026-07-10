@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Typography, Box, Modal, Card, CardContent, Grid, CircularProgress } from '@mui/material';
+import { Button, Typography, Box, Modal, Grid, CircularProgress } from '@mui/material';
 
 const modalStyle = {
   position: 'absolute' as 'absolute',

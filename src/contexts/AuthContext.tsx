@@ -26,16 +26,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     
     if (storedToken) {
       setApiToken(storedToken);
-      setIsAuthenticated(true);
       api.getCurrentUser()
         .then((user) => {
           const nextIsAdmin = !!user.is_superuser;
+          sessionStorage.setItem('is_auth', 'true');
           sessionStorage.setItem('is_admin', String(nextIsAdmin));
+          setIsAuthenticated(true);
           setIsAdmin(nextIsAdmin);
         })
         .catch(() => {
+          sessionStorage.removeItem('access_token');
+          sessionStorage.removeItem('is_auth');
           sessionStorage.removeItem('is_admin');
+          localStorage.removeItem('login_time');
+          setApiToken(null);
+          setIsAuthenticated(false);
           setIsAdmin(false);
+          setLoginTime(null);
         });
     }
     if (storedLoginTime) {

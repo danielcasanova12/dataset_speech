@@ -11,8 +11,7 @@ import {
   ListItem,
   ListItemIcon,
   ListItemText,
-  Fade,
-  Modal
+  Fade
 } from '@mui/material';
 import ScienceIcon from '@mui/icons-material/Science';
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';

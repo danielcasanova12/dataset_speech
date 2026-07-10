@@ -44,6 +44,7 @@ type SetupStage = 'package' | 'music' | 'review';
 type MusicButtonTutorialKey = 'phrase-controls' | 'listen-controls' | 'record-controls';
 type CountInOption = 0 | 1 | 2;
 type MusicSortOption = 'selected' | 'name' | 'genre' | 'recent';
+type FloatingAlertSeverity = 'success' | 'info' | 'warning' | 'error';
 
 interface MusicSessionPackage {
   key: SessionPackageKey;
@@ -136,12 +137,20 @@ interface DatasetPhraseRow {
   blockId: number;
 }
 
+interface FloatingAlertItem {
+  key: string;
+  severity: FloatingAlertSeverity;
+  message: string;
+}
+
 type DraftStep =
   | Omit<PhraseStep, 'order' | 'blockId'>
   | Omit<ListenStep, 'order' | 'blockId'>
   | Omit<RecordStep, 'order' | 'blockId'>;
 
 const MUSIC_DATASET_ID = 1;
+const MAX_RECORDING_SECONDS = 90;
+const MUSIC_SESSION_SETUP_STORAGE_KEY = 'music_session_setup_by_id';
 const STANDARD_NEUTRAL_PHRASE_COUNT = 3;
 const STANDARD_EMOTIONAL_PHRASE_COUNT = 5;
 const STANDARD_LYRIC_PHRASE_COUNT = 3;
@@ -195,6 +204,57 @@ const createInitialSetup = (): SetupFormState => ({
   genreFilter: '',
   sortBy: 'selected',
 });
+
+const readStoredMusicSessionSetups = (): Record<string, SetupFormState> => {
+  try {
+    const raw = localStorage.getItem(MUSIC_SESSION_SETUP_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const saveStoredMusicSessionSetup = (sessionId: number, setup: SetupFormState) => {
+  const stored = readStoredMusicSessionSetups();
+  stored[String(sessionId)] = setup;
+  localStorage.setItem(MUSIC_SESSION_SETUP_STORAGE_KEY, JSON.stringify(stored));
+};
+
+const getStoredMusicSessionSetup = (sessionId: number): SetupFormState | null => {
+  const stored = readStoredMusicSessionSetups();
+  const setup = stored[String(sessionId)];
+
+  if (!setup || !Array.isArray(setup.selectedMusicIds)) {
+    return null;
+  }
+
+  return {
+    packageKey: setup.packageKey || 'short',
+    selectedMusicIds: setup.selectedMusicIds,
+    searchTerm: setup.searchTerm || '',
+    genreFilter: setup.genreFilter || '',
+    sortBy: setup.sortBy || 'selected',
+  };
+};
+
+const createResumeFallbackSetup = (musics: MusicListItem[], savedStepIndex: number): SetupFormState | null => {
+  if (musics.length === 0) return null;
+
+  const estimatedSongsNeeded = Math.max(1, Math.ceil((savedStepIndex + 1) / 5));
+  const selectedMusicIds = musics
+    .slice(0, Math.min(musics.length, estimatedSongsNeeded))
+    .map(music => music.id);
+
+  return {
+    packageKey: selectedMusicIds.length >= 3 ? 'long' : selectedMusicIds.length >= 2 ? 'medium' : 'short',
+    selectedMusicIds,
+    searchTerm: '',
+    genreFilter: '',
+    sortBy: 'selected',
+  };
+};
 
 const createInitialMusicAdminForm = (): MusicAdminFormState => ({
   nome: '',
@@ -632,12 +692,14 @@ const MusicSessionPage: React.FC = () => {
   const [existingSessionInfo, setExistingSessionInfo] = useState<SessionResponse | null>(null);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isLoadingSetupData, setIsLoadingSetupData] = useState(true);
+  const [isCheckingExistingSession, setIsCheckingExistingSession] = useState(true);
   const [isPreparingSession, setIsPreparingSession] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [stepAudioError, setStepAudioError] = useState<string | null>(null);
   const [showExistingSessionModal, setShowExistingSessionModal] = useState(false);
+  const [existingSessionModalMode, setExistingSessionModalMode] = useState<'entry' | 'start'>('entry');
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showFinishModal, setShowFinishModal] = useState(false);
   const [showStepTutorialModal, setShowStepTutorialModal] = useState(false);
@@ -679,6 +741,8 @@ const MusicSessionPage: React.FC = () => {
   const [pendingReviewUrl, setPendingReviewUrl] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const preloadedAudioUrlsRef = useRef<Set<string>>(new Set());
+  const preloadedAudioElementsRef = useRef<HTMLAudioElement[]>([]);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -1111,6 +1175,25 @@ const MusicSessionPage: React.FC = () => {
     loadAudioSource(url, restart);
   }, [loadAudioSource]);
 
+  const preloadAudioUrl = useCallback((url: string | null | undefined) => {
+    if (!url || preloadedAudioUrlsRef.current.has(url)) return;
+
+    const audio = new Audio();
+    audio.preload = 'auto';
+    audio.src = url;
+    audio.load();
+
+    preloadedAudioUrlsRef.current.add(url);
+    preloadedAudioElementsRef.current.push(audio);
+  }, []);
+
+  const preloadMusicAudio = useCallback((music: MusicDetails | null | undefined) => {
+    if (!music) return;
+
+    preloadAudioUrl(music.vocal_audio_url);
+    preloadAudioUrl(music.instrumental_audio_url);
+  }, [preloadAudioUrl]);
+
   const playAudioUrl = useCallback(async (url: string | null, restart = false) => {
     if (!url) return;
 
@@ -1386,9 +1469,14 @@ const MusicSessionPage: React.FC = () => {
 
   const ensureMusicDetails = useCallback(async (musicId: number): Promise<MusicDetails> => {
     const cached = musicDetailsRef.current[musicId];
-    if (cached) return cached;
+    if (cached) {
+      preloadMusicAudio(cached);
+      return cached;
+    }
 
     const detail = await api.getMusic(musicId);
+    preloadMusicAudio(detail);
+
     musicDetailsRef.current = {
       ...musicDetailsRef.current,
       [musicId]: detail,
@@ -1400,7 +1488,38 @@ const MusicSessionPage: React.FC = () => {
     }));
 
     return detail;
-  }, []);
+  }, [preloadMusicAudio]);
+
+  useEffect(() => {
+    if (setup.selectedMusicIds.length === 0) return;
+
+    setup.selectedMusicIds.forEach((musicId) => {
+      void ensureMusicDetails(musicId).catch((error) => {
+        console.warn(`Falha ao pré-carregar áudio da música ${musicId}:`, error);
+      });
+    });
+  }, [ensureMusicDetails, setup.selectedMusicIds]);
+
+  useEffect(() => {
+    if (currentStepType === 'listen') {
+      const vocalUrl = currentMusicDetail?.vocal_audio_url || null;
+      preloadAudioUrl(vocalUrl);
+      primeAudioUrl(vocalUrl, true);
+      return;
+    }
+
+    if (currentStepType === 'record') {
+      preloadAudioUrl(selectedMonitorUrl);
+      primeAudioUrl(selectedMonitorUrl, false);
+    }
+  }, [
+    currentMusicDetail?.vocal_audio_url,
+    currentStepId,
+    currentStepType,
+    preloadAudioUrl,
+    primeAudioUrl,
+    selectedMonitorUrl,
+  ]);
 
   const loadSetupData = useCallback(async () => {
     setIsLoadingSetupData(true);
@@ -2015,11 +2134,12 @@ const MusicSessionPage: React.FC = () => {
       }
 
       pendingStepsRef.current = preparedSteps;
-      const newSession = await api.createSession(MUSIC_DATASET_ID, true, { session_type: 'music' });
+      const newSession = session || await api.createSession(MUSIC_DATASET_ID, true, { session_type: 'music' });
 
       setSession(newSession);
       setSteps(preparedSteps);
-      setCurrentStepIndex(0);
+      saveStoredMusicSessionSetup(newSession.id, setup);
+      setCurrentStepIndex(session ? Math.max(0, Math.min(session.numero_frase || 0, preparedSteps.length - 1)) : 0);
       setRuntimeError(null);
     } catch (error: unknown) {
       const errorWithSession = error as Error & { session?: SessionResponse };
@@ -2027,6 +2147,7 @@ const MusicSessionPage: React.FC = () => {
 
       if (hasExistingSession) {
         setExistingSessionInfo(errorWithSession.session || null);
+        setExistingSessionModalMode('start');
         setShowExistingSessionModal(true);
       } else {
         console.error('Falha ao preparar a sessão de música:', error);
@@ -2035,10 +2156,10 @@ const MusicSessionPage: React.FC = () => {
     } finally {
       setIsPreparingSession(false);
     }
-  }, [buildSteps, emotionPhraseGroups.length, neutralPhrasePool.length, setup]);
+  }, [buildSteps, emotionPhraseGroups.length, neutralPhrasePool.length, session, setup]);
 
   const handleFinalizeCurrentAndStartNew = useCallback(async () => {
-    if (!existingSessionInfo || pendingStepsRef.current.length === 0) return;
+    if (!existingSessionInfo) return;
 
     setIsProcessing(true);
     try {
@@ -2049,32 +2170,72 @@ const MusicSessionPage: React.FC = () => {
         finished_at: new Date().toISOString(),
       });
 
-      const newSession = await api.createSession(MUSIC_DATASET_ID, true, { session_type: 'music' });
-      setSession(newSession);
-      setSteps(pendingStepsRef.current);
-      setCurrentStepIndex(0);
+      if (pendingStepsRef.current.length > 0) {
+        const newSession = await api.createSession(MUSIC_DATASET_ID, true, { session_type: 'music' });
+        setSession(newSession);
+        setSteps(pendingStepsRef.current);
+        saveStoredMusicSessionSetup(newSession.id, setup);
+        setCurrentStepIndex(0);
+      } else {
+        setSession(null);
+        setSteps([]);
+        setCurrentStepIndex(0);
+      }
+
       setExistingSessionInfo(null);
       setShowExistingSessionModal(false);
       setRuntimeError(null);
+      setSetupError(null);
     } catch (error) {
       console.error('Falha ao trocar a sessão de música ativa:', error);
       setSetupError('Não foi possível finalizar a sessão ativa e iniciar uma nova.');
     } finally {
       setIsProcessing(false);
     }
-  }, [existingSessionInfo, stopMetronome]);
+  }, [existingSessionInfo, setup, stopMetronome]);
 
-  const handleResumeExistingSession = useCallback(() => {
-    if (!existingSessionInfo || pendingStepsRef.current.length === 0) return;
+  const handleResumeExistingSession = useCallback(async () => {
+    if (!existingSessionInfo) return;
 
-    setSession(existingSessionInfo);
-    setSteps(pendingStepsRef.current);
-    setCurrentStepIndex(Math.max(0, Math.min(existingSessionInfo.numero_frase || 0, pendingStepsRef.current.length - 1)));
-    setExistingSessionInfo(null);
-    setShowExistingSessionModal(false);
-    setRuntimeError(null);
+    setIsProcessing(true);
     setSetupError(null);
-  }, [existingSessionInfo]);
+
+    try {
+      let stepsToUse = pendingStepsRef.current;
+      const storedSetup = getStoredMusicSessionSetup(existingSessionInfo.id);
+      const resumeSetup = storedSetup || createResumeFallbackSetup(musics, existingSessionInfo.numero_frase || 0);
+
+      if (stepsToUse.length === 0) {
+        if (!resumeSetup || resumeSetup.selectedMusicIds.length === 0) {
+          setSetupError('Não foi possível montar a sessão ativa porque nenhuma música está disponível.');
+          return;
+        }
+
+        stepsToUse = await buildSteps(resumeSetup);
+        pendingStepsRef.current = stepsToUse;
+        setSetup(resumeSetup);
+        saveStoredMusicSessionSetup(existingSessionInfo.id, resumeSetup);
+      }
+
+      if (stepsToUse.length === 0) {
+        setSetupError('Não foi possível montar as etapas da sessão ativa.');
+        return;
+      }
+
+      setSession(existingSessionInfo);
+      setSteps(stepsToUse);
+      setCurrentStepIndex(Math.max(0, Math.min(existingSessionInfo.numero_frase || 0, stepsToUse.length - 1)));
+      setExistingSessionInfo(null);
+      setShowExistingSessionModal(false);
+      setRuntimeError(null);
+      setSetupError(null);
+    } catch (error) {
+      console.error('Falha ao continuar sessão de música ativa:', error);
+      setSetupError('Não foi possível continuar a sessão ativa. Tente selecionar as músicas novamente.');
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [buildSteps, existingSessionInfo, musics]);
 
   const handleCancelSession = useCallback(async () => {
     stopMetronome();
@@ -2316,6 +2477,52 @@ const MusicSessionPage: React.FC = () => {
   useEffect(() => {
     void loadSetupData();
   }, [loadSetupData]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const checkExistingMusicSession = async () => {
+      setIsCheckingExistingSession(true);
+      try {
+        const currentUser = await api.getCurrentUser();
+        const userSessions = await api.getUserSessions(currentUser.id);
+        const activeMusicSession = userSessions.find(item => (
+          item.dataset_id === MUSIC_DATASET_ID
+          && item.status === 'active'
+          && !item.finished_at
+        ));
+
+        if (!cancelled && activeMusicSession) {
+          setExistingSessionInfo({
+            id: activeMusicSession.id,
+            user_id: activeMusicSession.user_id,
+            dataset_id: activeMusicSession.dataset_id,
+            started_at: activeMusicSession.started_at,
+            finished_at: activeMusicSession.finished_at,
+            notes: activeMusicSession.notes,
+            status: 'active',
+            numero_frase: activeMusicSession.numero_frase || 0,
+          });
+          setExistingSessionModalMode('entry');
+          setShowExistingSessionModal(true);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('Não foi possível verificar sessão de música ativa:', error);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsCheckingExistingSession(false);
+        }
+      }
+    };
+
+    void checkExistingMusicSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     clearPendingReview();
@@ -2566,6 +2773,63 @@ const MusicSessionPage: React.FC = () => {
   }, [isMicPaused, isRecording]);
 
   useEffect(() => {
+    if (!isRecording || isMicPaused || timer < MAX_RECORDING_SECONDS || !currentStep || currentStep.type === 'listen') {
+      return;
+    }
+
+    let cancelled = false;
+
+    const stopAtDurationLimit = async () => {
+      setIsProcessing(true);
+
+      try {
+        const audioBlob = await finalizeRecording(true);
+        stopMusicPlayback(true);
+        stopMetronome();
+
+        if (cancelled) return;
+
+        resetTakeState();
+
+        if (!audioBlob || audioBlob.size === 0) {
+          setRuntimeError('A gravação chegou ao limite de 1 minuto e 30 segundos, mas nenhum áudio foi capturado. Grave novamente.');
+          return;
+        }
+
+        clearPendingReview();
+        setPendingReviewBlob(audioBlob);
+        setPendingReviewUrl(URL.createObjectURL(audioBlob));
+        setRuntimeError('A gravação foi parada automaticamente ao atingir 1 minuto e 30 segundos. Revise, salve ou regrave antes de continuar.');
+      } catch (error) {
+        console.error('Falha ao parar gravação no limite de duração:', error);
+        if (!cancelled) {
+          setRuntimeError('Não foi possível encerrar a gravação automaticamente. Tente salvar ou regravar.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsProcessing(false);
+        }
+      }
+    };
+
+    void stopAtDurationLimit();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    clearPendingReview,
+    currentStep,
+    finalizeRecording,
+    isMicPaused,
+    isRecording,
+    resetTakeState,
+    stopMetronome,
+    stopMusicPlayback,
+    timer,
+  ]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const syncMonitor = async () => {
@@ -2597,9 +2861,19 @@ const MusicSessionPage: React.FC = () => {
   }, [canUseVoiceMonitoring, ensureMicrophoneReady, isMicPaused, isRecording, syncVoiceMonitorAudio, voiceMonitoring]);
 
   useEffect(() => {
+    const preloadedAudioElements = preloadedAudioElementsRef.current;
+    const preloadedAudioUrls = preloadedAudioUrlsRef.current;
+
     return () => {
       clearPendingReview();
       stopMusicPlayback(true);
+      preloadedAudioElements.forEach((audio) => {
+        audio.pause();
+        audio.removeAttribute('src');
+        audio.load();
+      });
+      preloadedAudioElements.length = 0;
+      preloadedAudioUrls.clear();
       stopMetronome();
       cleanupLiveIndicators();
       cleanupStream();
@@ -2651,24 +2925,127 @@ const MusicSessionPage: React.FC = () => {
     return 'Salvar e continuar';
   }, [currentStep, isLastStep, pendingReviewBlob]);
 
+  const floatingAlerts = useMemo<FloatingAlertItem[]>(() => {
+    const alerts: FloatingAlertItem[] = [];
+
+    if (musicAdminStatus) {
+      alerts.push({
+        key: 'music-admin-status',
+        severity: musicAdminStatus.type,
+        message: musicAdminStatus.message,
+      });
+    }
+
+    if (setupError) {
+      const isSelectionWarning = setupError.toLocaleLowerCase('pt-BR').includes('pacote')
+        || setupError.toLocaleLowerCase('pt-BR').includes('seleção')
+        || setupError.toLocaleLowerCase('pt-BR').includes('músicas');
+
+      alerts.push({
+        key: 'setup-error',
+        severity: isSelectionWarning ? 'warning' : 'error',
+        message: setupError,
+      });
+    }
+
+    if (runtimeError) {
+      alerts.push({
+        key: 'runtime-error',
+        severity: runtimeError.includes('1 minuto e 30 segundos') ? 'warning' : 'error',
+        message: runtimeError,
+      });
+    }
+
+    if (stepAudioError) {
+      alerts.push({
+        key: 'step-audio-error',
+        severity: 'error',
+        message: stepAudioError,
+      });
+    }
+
+    return alerts;
+  }, [musicAdminStatus, runtimeError, setupError, stepAudioError]);
+
+  const floatingAlertStack = floatingAlerts.length > 0 ? (
+    <Box
+      sx={{
+        position: 'fixed',
+        top: 16,
+        right: 16,
+        zIndex: 2000,
+        width: { xs: 'calc(100vw - 32px)', sm: 420 },
+        pointerEvents: 'none',
+      }}
+    >
+      <Stack spacing={1.25}>
+        {floatingAlerts.map((item) => (
+          <Alert
+            key={item.key}
+            severity={item.severity}
+            variant="filled"
+            sx={{
+              borderRadius: 2,
+              boxShadow: '0 14px 36px rgba(0, 0, 0, 0.22)',
+              pointerEvents: 'auto',
+              alignItems: 'center',
+              fontWeight: 600,
+              '& .MuiAlert-icon': {
+                alignItems: 'center',
+                fontSize: 24,
+                opacity: 0.95,
+              },
+              '& .MuiAlert-message': {
+                py: 0.5,
+                lineHeight: 1.35,
+              },
+            }}
+          >
+            {item.message}
+          </Alert>
+        ))}
+      </Stack>
+    </Box>
+  ) : null;
+
   if (!isSessionStarted) {
     return (
       <Container maxWidth="xl">
-        <Modal open={showExistingSessionModal} onClose={() => setShowExistingSessionModal(false)}>
-          <Box sx={modalStyle}>
-            <Typography variant="h6">Você já possui uma sessão de música ativa.</Typography>
-            <Typography sx={{ mt: 2 }}>
-              Você pode continuar da etapa onde parou ou encerrar a sessão atual para começar outra.
+        {floatingAlertStack}
+        <Modal open={showExistingSessionModal} onClose={() => undefined}>
+          <Box sx={{ ...modalStyle, width: { xs: 'calc(100vw - 32px)', sm: 620 } }}>
+            <Typography variant="h5" component="h2" sx={{ fontWeight: 800 }}>
+              Encontramos uma sessão de música em andamento
             </Typography>
-            <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
-              <Button variant="outlined" onClick={handleResumeExistingSession} disabled={isProcessing}>
-                Voltar para sessão existente
+            <Typography sx={{ mt: 2 }}>
+              Este usuário já tem uma sessão ativa. Escolha se deseja continuar essa sessão ou encerrar a sessão anterior para configurar uma nova.
+            </Typography>
+
+            {existingSessionInfo && (
+              <Alert severity="info" sx={{ mt: 2 }}>
+                Sessão ativa #{existingSessionInfo.id}. Progresso salvo até a etapa {Math.max(0, existingSessionInfo.numero_frase || 0)}.
+              </Alert>
+            )}
+
+            <Alert severity="warning" sx={{ mt: 2 }}>
+              Se você criar uma nova sessão, a sessão anterior será finalizada. Depois disso, ela não aparecerá mais como sessão ativa para continuar.
+            </Alert>
+
+            {existingSessionModalMode === 'entry' && (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                Ao continuar, você volta para a tela de gravação no ponto salvo da sessão ativa.
+              </Typography>
+            )}
+
+            <Box sx={{ mt: 3, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
+              <Button variant="contained" onClick={handleResumeExistingSession} disabled={isProcessing}>
+                Continuar sessão ativa
               </Button>
-              <Button variant="contained" onClick={handleFinalizeCurrentAndStartNew} disabled={isProcessing}>
-                Finalizar sessão atual e iniciar nova
+              <Button variant="outlined" color="warning" onClick={handleFinalizeCurrentAndStartNew} disabled={isProcessing}>
+                Encerrar anterior e criar nova
               </Button>
-              <Button variant="outlined" color="error" onClick={() => navigate('/')}>
-                Voltar para a Home
+              <Button variant="outlined" color="error" onClick={() => navigate('/')} disabled={isProcessing} sx={{ gridColumn: { xs: 'auto', sm: '1 / -1' } }}>
+                Voltar para a Home sem alterar nada
               </Button>
             </Box>
           </Box>
@@ -2695,7 +3072,7 @@ const MusicSessionPage: React.FC = () => {
             </Typography>
           </Box>
 
-          {isLoadingSetupData ? (
+          {isLoadingSetupData || isCheckingExistingSession ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
               <CircularProgress />
             </Box>
@@ -3298,6 +3675,7 @@ const MusicSessionPage: React.FC = () => {
 
   return (
     <Container maxWidth="lg" sx={{ pb: 18 }}>
+      {floatingAlertStack}
       <Modal open={showStepTutorialModal && !!stepTutorialContent} onClose={handleCloseStepTutorial}>
         <Box sx={{ ...modalStyle, p: 0, overflow: 'hidden', borderRadius: 2, width: 560, maxWidth: 'calc(100vw - 32px)' }}>
           <Box sx={{ bgcolor: 'primary.main', color: 'primary.contrastText', p: 2, display: 'flex', alignItems: 'center' }}>

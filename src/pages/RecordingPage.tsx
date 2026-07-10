@@ -19,6 +19,7 @@ import { DatasetOrchestrator, OrchestratorConfig, Phrase as OrchestratorPhrase }
 interface Phrase extends OrchestratorPhrase { }
 interface Block { blockId: number; name: string; emocao: number; isSpontaneous: boolean; }
 
+const MAX_RECORDING_SECONDS = 90;
 const modalStyle = { position: 'absolute' as 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 400, bgcolor: 'background.paper', border: '2px solid #000', boxShadow: 24, p: 4 };
 
 const getBlockTutorial = (blockId: number, blocks: Block[]) => {
@@ -80,29 +81,6 @@ const TutorialTooltip: React.FC<{ text: string; top: number; left: number; onNex
     </Paper>
   </Box>
 );
-const systemTutorialSteps = [
-  {
-    text: "Aqui você acompanha o progresso das frases gravadas.",
-    getPosition: (progressRef: HTMLElement | null) =>
-      progressRef?.getBoundingClientRect(),
-  },
-  {
-    text: "Aqui você vê o nível do áudio (dBFS). Evite ficar no vermelho.",
-    getPosition: (timerRef: HTMLElement | null) =>
-      timerRef?.getBoundingClientRect(),
-  },
-  {
-    text: "Leia esta frase em voz alta de forma clara e natural.",
-    getPosition: (phraseRef: HTMLElement | null) =>
-      phraseRef?.getBoundingClientRect(),
-  },
-  {
-    text: "Clique aqui para salvar e ir para a próxima frase.",
-    getPosition: (saveRef: HTMLElement | null) =>
-      saveRef?.getBoundingClientRect(),
-  },
-];
-
 function audioBufferToWav(buffer: AudioBuffer): Blob {
   const numOfChan = buffer.numberOfChannels;
   const length = buffer.length * numOfChan * 2 + 44;
@@ -228,7 +206,6 @@ const RecordingPage: React.FC = () => {
 
   const sessionCreationLock = useRef(false);
   const shouldAutoStartRef = useRef(false);
-  const previousBlockIdRef = useRef<number | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaRecorderSampleRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]); 
@@ -468,6 +445,10 @@ const RecordingPage: React.FC = () => {
     startRecording().catch(err => console.error("Auto-start failed:", err));
   }, [isVideoPhrase, startRecording]);
 
+  const sessionToResume = location.state?.sessionToResume;
+  const sessionDatasetId = session?.dataset_id;
+  const sessionNumeroFrase = session?.numero_frase ?? 0;
+
   useEffect(() => {
     const createOrResumeSession = async () => {
       const sessionToResume = location.state?.sessionToResume;
@@ -582,8 +563,8 @@ const RecordingPage: React.FC = () => {
 
   useEffect(() => {
     const fetchCsvData = async () => {
-      if (!session || !selectedPackage) return;
-      const datasetInfo = findByBackendId(session.dataset_id);
+      if (!sessionDatasetId || !selectedPackage) return;
+      const datasetInfo = findByBackendId(sessionDatasetId);
       if (!datasetInfo) return;
 
       setIsLoading(true);
@@ -641,9 +622,9 @@ const RecordingPage: React.FC = () => {
         setPhrases(sessionPhrases);
         
         // 4. Set starting index from resume
-        if (location.state?.sessionToResume) {
+        if (sessionToResume) {
           // Ajuste: se a API retornar numero_frase > 0, usamos para o index
-          setCurrentPhraseIndex(Math.max(0, session.numero_frase));
+          setCurrentPhraseIndex(Math.max(0, sessionNumeroFrase));
         } else {
           setCurrentPhraseIndex(0);
         }
@@ -659,7 +640,7 @@ const RecordingPage: React.FC = () => {
       }
     };
     fetchCsvData();
-  }, [session?.id, selectedPackage]);
+  }, [selectedPackage, sessionDatasetId, sessionNumeroFrase, sessionToResume]);
 
   useEffect(() => {
     if (shouldAutoStartRef.current && !isLoading && phrases.length > 0 && preRecordingStep === 'recording') {
@@ -767,7 +748,7 @@ const RecordingPage: React.FC = () => {
 
   }, [tutorialStep, isTutorialActive]);
 
-  const handleTutorialModalClose = () => {
+  const handleTutorialModalClose = useCallback(() => {
     if (tutorialAudioRef.current) {
       tutorialAudioRef.current.pause();
       tutorialAudioRef.current.currentTime = 0;
@@ -777,7 +758,7 @@ const RecordingPage: React.FC = () => {
     setTimeout(() => {
         startPhraseFlow(currentPhraseIndex);
     }, 500);
-  };
+  }, [currentPhraseIndex, startPhraseFlow]);
 
   const handleNextTutorialStep = useCallback(() => {
     if (tutorialStep === 8) {
@@ -1027,7 +1008,7 @@ const RecordingPage: React.FC = () => {
   }, [isRecording, isUIPaused]);
 
   useEffect(() => {
-    if (isRecording && timer >= 60 && preRecordingStep === 'recording') {
+    if (isRecording && timer >= MAX_RECORDING_SECONDS && preRecordingStep === 'recording') {
       stopRecording(true);
       resetRecordingState();
       setShowTimeoutModal(true);
@@ -1761,7 +1742,7 @@ const RecordingPage: React.FC = () => {
           </Box>
           <Box sx={{ p: 3 }}>
             <Typography sx={{ mt: 1, fontSize: '1.1rem' }}>
-              Você demorou mais de 1 minuto nesta frase. O áudio será descartado por ser muito longo.
+              Você chegou ao limite de 1 minuto e 30 segundos nesta frase. O áudio será descartado para evitar falhas no envio.
             </Typography>
             <Typography sx={{ mt: 2, fontWeight: 'bold' }}>
               Por favor, tente gravar novamente de forma mais concisa.

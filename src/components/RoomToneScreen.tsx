@@ -73,7 +73,7 @@ const RoomToneScreen: React.FC<RoomToneScreenProps> = ({ onRecordingComplete }) 
         stopRecording();
       }
     };
-  }, [step, stopRecording]); // Note: stopRecording was already in the dependency array or used inside, I'll keep it correct.
+  }, [onRecordingComplete, step, stopRecording]);
 
   useEffect(() => {
     if (step === 'recording') {
