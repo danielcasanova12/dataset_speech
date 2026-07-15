@@ -19,6 +19,8 @@ import {
   Slider,
   Stack,
   Switch,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from '@mui/material';
@@ -34,7 +36,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
 import AudioVisualizer from '../components/AudioVisualizer';
-import { api, MusicDetails, MusicListItem, SessionResponse } from '../services/api';
+import { api, LocalMicrophone, LocalRecordingStartPayload, LocalRecordingStopPayload, MusicDetails, MusicListItem, SessionResponse } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
 type PhraseCategory = 'neutral' | 'emotional' | 'lyric';
@@ -45,6 +47,7 @@ type MusicButtonTutorialKey = 'phrase-controls' | 'listen-controls' | 'record-co
 type CountInOption = 0 | 1 | 2;
 type MusicSortOption = 'selected' | 'name' | 'genre' | 'recent';
 type FloatingAlertSeverity = 'success' | 'info' | 'warning' | 'error';
+type RecordSetupTab = 'microphone' | 'monitor' | 'rhythm';
 
 interface MusicSessionPackage {
   key: SessionPackageKey;
@@ -151,10 +154,12 @@ type DraftStep =
 const MUSIC_DATASET_ID = 1;
 const MAX_RECORDING_SECONDS = 90;
 const MUSIC_SESSION_SETUP_STORAGE_KEY = 'music_session_setup_by_id';
+const LOCAL_RECORDING_MIC_STORAGE_KEY = 'local_recording_microphone_id';
 const STANDARD_NEUTRAL_PHRASE_COUNT = 3;
 const STANDARD_EMOTIONAL_PHRASE_COUNT = 5;
 const STANDARD_LYRIC_PHRASE_COUNT = 3;
 const ACCESSIBLE_READING_FONT = '"Atkinson Hyperlegible", Verdana, Tahoma, "Trebuchet MS", sans-serif';
+const LOCAL_RECORDING_API_REQUIRED_MESSAGE = 'A API local de gravação está offline. Para iniciar uma sessão de música, clone https://github.com/danielcasanova12/local-speech-recording-api e siga o README.md para rodar a API local em http://localhost:9000.';
 
 const MUSIC_SESSION_PACKAGES: MusicSessionPackage[] = [
   {
@@ -399,6 +404,19 @@ const getDisplayTimeSignature = (value?: string | null): string => {
   const normalized = value?.trim();
   return normalized || '4/4';
 };
+
+const getLocalMicrophoneId = (microphone: LocalMicrophone | null | undefined): string => {
+  const value = microphone?.microphone_id ?? microphone?.id ?? microphone?.index ?? microphone?.device_id;
+  return value === undefined || value === null ? '' : String(value);
+};
+
+const getLocalMicrophoneLabel = (microphone: LocalMicrophone, index: number): string => {
+  return microphone.name || microphone.label || `Microfone ${index + 1}`;
+};
+
+const getLocalRecordingUserId = (session: SessionResponse): number => session.id;
+
+const createLocalRecordingId = (): number => Date.now();
 
 const parseTimeSignature = (value?: string | null): { numerator: number; denominator: number } => {
   const normalized = getDisplayTimeSignature(value);
@@ -650,7 +668,7 @@ const TutorialTooltip: React.FC<{
       </Typography>
       <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
         <Button onClick={onSkip} variant="text" size="small">
-          Pular
+          Pular tutorial
         </Button>
         <Button onClick={onNext} variant="contained" size="small">
           Próximo
@@ -704,10 +722,10 @@ const MusicSessionPage: React.FC = () => {
   const [showFinishModal, setShowFinishModal] = useState(false);
   const [showStepTutorialModal, setShowStepTutorialModal] = useState(false);
   const [stepTutorialContent, setStepTutorialContent] = useState<MusicStepTutorial | null>(null);
-  const [stepTutorialVersion, setStepTutorialVersion] = useState(0);
+  const [, setStepTutorialVersion] = useState(0);
   const [activeButtonTutorialKey, setActiveButtonTutorialKey] = useState<MusicButtonTutorialKey | null>(null);
   const [buttonTutorialStep, setButtonTutorialStep] = useState<number | null>(null);
-  const [buttonTutorialVersion, setButtonTutorialVersion] = useState(0);
+  const [, setButtonTutorialVersion] = useState(0);
   const [buttonTooltipConfig, setButtonTooltipConfig] = useState<{
     open: boolean;
     text: string;
@@ -719,6 +737,7 @@ const MusicSessionPage: React.FC = () => {
   const [previewVisibleIds, setPreviewVisibleIds] = useState<number[]>([]);
   const [previewLoadingIds, setPreviewLoadingIds] = useState<number[]>([]);
   const [monitorMode, setMonitorMode] = useState<MonitorMode>('none');
+  const [recordSetupTab, setRecordSetupTab] = useState<RecordSetupTab>('microphone');
   const [metronomeConfig, setMetronomeConfig] = useState<MetronomeConfig>(() => createInitialMetronomeConfig(null));
   const [voiceMonitoring, setVoiceMonitoring] = useState(false);
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
@@ -737,6 +756,11 @@ const MusicSessionPage: React.FC = () => {
   const [skipCount, setSkipCount] = useState(0);
   const [micPreviewReady, setMicPreviewReady] = useState(false);
   const [micPreviewLoading, setMicPreviewLoading] = useState(false);
+  const [isMicTestRecording, setIsMicTestRecording] = useState(false);
+  const [localRecordingReady, setLocalRecordingReady] = useState(false);
+  const [localMicrophones, setLocalMicrophones] = useState<LocalMicrophone[]>([]);
+  const [selectedLocalMicrophoneId, setSelectedLocalMicrophoneId] = useState('');
+  const [micTestAudioUrl, setMicTestAudioUrl] = useState<string | null>(null);
   const [pendingReviewBlob, setPendingReviewBlob] = useState<Blob | null>(null);
   const [pendingReviewUrl, setPendingReviewUrl] = useState<string | null>(null);
 
@@ -744,12 +768,16 @@ const MusicSessionPage: React.FC = () => {
   const preloadedAudioUrlsRef = useRef<Set<string>>(new Set());
   const preloadedAudioElementsRef = useRef<HTMLAudioElement[]>([]);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const micTestCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const localAudioStreamSocketRef = useRef<WebSocket | null>(null);
+  const isLocalRecordingActiveRef = useRef(false);
+  const localRecordingStopPayloadRef = useRef<LocalRecordingStopPayload | null>(null);
   const voiceMonitorAudioRef = useRef<HTMLAudioElement | null>(null);
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const animationFrameRef = useRef<number | null>(null);
@@ -762,8 +790,11 @@ const MusicSessionPage: React.FC = () => {
   const pendingStepsRef = useRef<SessionStep[]>([]);
   const musicDetailsRef = useRef<Record<number, MusicDetails>>({});
   const currentStepRef = useRef<SessionStep | null>(null);
+  const buttonTutorialStepRef = useRef<number | null>(null);
+  const localRecordingReadyRef = useRef(false);
   const seenTutorialKeysRef = useRef<Set<string>>(new Set());
   const seenButtonTutorialKeysRef = useRef<Set<MusicButtonTutorialKey>>(new Set());
+  const startRecordingRef = useRef<() => Promise<void>>(async () => undefined);
 
   const dyslexicButtonRef = useRef<HTMLButtonElement | null>(null);
   const contrastButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -902,8 +933,6 @@ const MusicSessionPage: React.FC = () => {
     return `${monitorSummary} • ${metronomeSummary} • ${voiceSummary}`;
   }, [currentMusicDetail?.bpm, currentStep, metronomeConfig.bpm, metronomeConfig.enabled, metronomeConfig.timeSignature, monitorMode, voiceMonitoring]);
 
-  const micSignalDetected = useMemo(() => dbfs > -55, [dbfs]);
-
   useEffect(() => {
     musicDetailsRef.current = musicDetails;
   }, [musicDetails]);
@@ -911,6 +940,14 @@ const MusicSessionPage: React.FC = () => {
   useEffect(() => {
     currentStepRef.current = currentStep;
   }, [currentStep]);
+
+  useEffect(() => {
+    buttonTutorialStepRef.current = buttonTutorialStep;
+  }, [buttonTutorialStep]);
+
+  useEffect(() => {
+    localRecordingReadyRef.current = localRecordingReady;
+  }, [localRecordingReady]);
 
   const stopMusicProgressTracking = useCallback(() => {
     if (musicProgressIntervalRef.current) {
@@ -1110,6 +1147,15 @@ const MusicSessionPage: React.FC = () => {
     });
   }, []);
 
+  const clearMicTestAudio = useCallback(() => {
+    setMicTestAudioUrl((previous) => {
+      if (previous) {
+        URL.revokeObjectURL(previous);
+      }
+      return null;
+    });
+  }, []);
+
   const stopMusicPlayback = useCallback((clearSource = false) => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -1263,6 +1309,188 @@ const MusicSessionPage: React.FC = () => {
     draw();
   }, []);
 
+  const drawRecordedMicTestWave = useCallback(async (audioBlob: Blob) => {
+    const canvas = micTestCanvasRef.current;
+    if (!canvas) return;
+
+    const canvasContext = canvas.getContext('2d');
+    if (!canvasContext) return;
+
+    canvasContext.fillStyle = '#101217';
+    canvasContext.fillRect(0, 0, canvas.width, canvas.height);
+
+    try {
+      const AudioContextConstructor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextConstructor) return;
+
+      const arrayBuffer = await audioBlob.arrayBuffer();
+      const audioContext = new AudioContextConstructor();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+      const samples = audioBuffer.getChannelData(0);
+      const step = Math.max(1, Math.floor(samples.length / canvas.width));
+      const centerY = canvas.height / 2;
+
+      canvasContext.lineWidth = 2;
+      canvasContext.strokeStyle = '#5ed1ff';
+      canvasContext.beginPath();
+
+      for (let x = 0; x < canvas.width; x += 1) {
+        let min = 1;
+        let max = -1;
+        const start = x * step;
+        const end = Math.min(samples.length, start + step);
+
+        for (let index = start; index < end; index += 1) {
+          const sample = samples[index] || 0;
+          if (sample < min) min = sample;
+          if (sample > max) max = sample;
+        }
+
+        canvasContext.moveTo(x, centerY + min * centerY * 0.82);
+        canvasContext.lineTo(x, centerY + max * centerY * 0.82);
+      }
+
+      canvasContext.stroke();
+      await audioContext.close();
+    } catch (error) {
+      console.warn('Não foi possível desenhar a onda do teste de microfone:', error);
+    }
+  }, []);
+
+  const closeLocalAudioStream = useCallback(() => {
+    if (localAudioStreamSocketRef.current) {
+      localAudioStreamSocketRef.current.close();
+      localAudioStreamSocketRef.current = null;
+    }
+  }, []);
+
+  const prepareLocalRecordingMicrophone = useCallback(async () => {
+    setMicPreviewLoading(true);
+    setIsMicTestRecording(false);
+    setLocalRecordingReady(false);
+    clearMicTestAudio();
+    closeLocalAudioStream();
+
+    try {
+      await api.localRecordingHealth();
+      const microphones = await api.listLocalMicrophones();
+      setLocalMicrophones(microphones);
+
+      if (microphones.length === 0) {
+        throw new Error('Nenhum microfone foi encontrado pela API local.');
+      }
+
+      const selected = await api.getSelectedLocalMicrophone().catch(() => null);
+      const selectedId = getLocalMicrophoneId(selected);
+      const savedMicrophoneId = localStorage.getItem(LOCAL_RECORDING_MIC_STORAGE_KEY) || '';
+      const hasSaved = savedMicrophoneId && microphones.some(microphone => getLocalMicrophoneId(microphone) === savedMicrophoneId);
+      const hasSelected = selectedId && microphones.some(microphone => getLocalMicrophoneId(microphone) === selectedId);
+      const fallbackMicrophone = microphones.find(microphone => microphone.is_default || microphone.selected) || microphones[0];
+
+      setSelectedLocalMicrophoneId(hasSaved ? savedMicrophoneId : hasSelected ? selectedId : getLocalMicrophoneId(fallbackMicrophone));
+      setMicPreviewReady(false);
+      setRuntimeError(null);
+    } catch (error) {
+      console.error('Não foi possível preparar a API local de gravação:', error);
+      setLocalMicrophones([]);
+      setSelectedLocalMicrophoneId('');
+      setMicPreviewReady(false);
+      setLocalRecordingReady(false);
+      setRuntimeError(error instanceof Error ? error.message : 'Não foi possível preparar a API local de gravação.');
+    } finally {
+      setMicPreviewLoading(false);
+    }
+  }, [clearMicTestAudio, closeLocalAudioStream]);
+
+  const startLocalRecordingWithRecovery = useCallback(async (payload: LocalRecordingStartPayload) => {
+    try {
+      await api.startLocalRecording(payload);
+    } catch (error) {
+      const activeRecording = (error as Error & { active_recording?: LocalRecordingStopPayload }).active_recording;
+      if (!activeRecording) {
+        throw error;
+      }
+
+      await api.stopLocalRecording(activeRecording);
+      await api.startLocalRecording(payload);
+    }
+
+    localRecordingStopPayloadRef.current = {
+      user_id: payload.user_id,
+      session_id: payload.session_id,
+      id_recordings: payload.id_recordings,
+    };
+    isLocalRecordingActiveRef.current = true;
+  }, []);
+
+  const handleTestLocalMicrophone = useCallback(async () => {
+    if (!selectedLocalMicrophoneId) {
+      setRuntimeError('Selecione um microfone antes de testar.');
+      return;
+    }
+
+    if (!session || currentStepRef.current?.type !== 'record') {
+      setRuntimeError('A sessão de música ainda não está pronta para testar o microfone.');
+      return;
+    }
+
+    setMicPreviewLoading(true);
+    setLocalRecordingReady(false);
+    setMicPreviewReady(false);
+    clearMicTestAudio();
+    closeLocalAudioStream();
+
+    try {
+      await api.selectLocalMicrophone(selectedLocalMicrophoneId);
+      localStorage.setItem(LOCAL_RECORDING_MIC_STORAGE_KEY, selectedLocalMicrophoneId);
+
+      const step = currentStepRef.current;
+      const promptText = `Teste de microfone para ${step.musicName || 'música'}`.trim();
+      const localUserId = getLocalRecordingUserId(session);
+      const testRecordingId = createLocalRecordingId();
+
+      await startLocalRecordingWithRecovery({
+        user_id: localUserId,
+        session_id: session.id,
+        id_recordings: testRecordingId,
+        dataset_id: session.dataset_id,
+        bloco_id: step.blockId,
+        created_at: new Date().toISOString(),
+        audio_id: `${step.id}-mic-test`,
+        step_type: 'music',
+        frase_content: promptText,
+        text_prompt: promptText,
+      });
+
+      setIsMicTestRecording(true);
+      await new Promise(resolve => window.setTimeout(resolve, 3000));
+      setIsMicTestRecording(false);
+      const stopPayload = localRecordingStopPayloadRef.current;
+      if (!stopPayload) {
+        throw new Error('Dados da gravação de teste não encontrados para parar a captura.');
+      }
+      await api.stopLocalRecording(stopPayload);
+      isLocalRecordingActiveRef.current = false;
+      localRecordingStopPayloadRef.current = null;
+
+      const testAudio = await api.getLocalRecordingAudio(testRecordingId);
+      setMicTestAudioUrl(URL.createObjectURL(testAudio));
+      await drawRecordedMicTestWave(testAudio);
+      setLocalRecordingReady(true);
+      setRuntimeError(null);
+    } catch (error) {
+      console.error('Não foi possível selecionar/testar o microfone local:', error);
+      isLocalRecordingActiveRef.current = false;
+      localRecordingStopPayloadRef.current = null;
+      setLocalRecordingReady(false);
+      setMicPreviewReady(false);
+      setRuntimeError(error instanceof Error ? error.message : 'Não foi possível gravar a amostra de teste do microfone.');
+    } finally {
+      setIsMicTestRecording(false);
+      setMicPreviewLoading(false);
+    }
+  }, [clearMicTestAudio, closeLocalAudioStream, drawRecordedMicTestWave, selectedLocalMicrophoneId, session, startLocalRecordingWithRecovery]);
+
   const ensureMicrophoneReady = useCallback(async () => {
     if (!streamRef.current || !streamRef.current.active) {
       const savedMicId = localStorage.getItem('selectedMicId');
@@ -1299,26 +1527,6 @@ const MusicSessionPage: React.FC = () => {
       sourceRef.current.connect(analyserRef.current);
     }
   }, []);
-
-  const prepareMicPreview = useCallback(async () => {
-    setMicPreviewLoading(true);
-    try {
-      await ensureMicrophoneReady();
-      if (!animationFrameRef.current) {
-        window.requestAnimationFrame(() => {
-          drawMicWave();
-        });
-      }
-      setMicPreviewReady(true);
-      setRuntimeError(null);
-    } catch (error) {
-      console.error('Não foi possível preparar o pré-teste do microfone:', error);
-      setMicPreviewReady(false);
-      setRuntimeError('Não foi possível preparar o microfone para a gravação.');
-    } finally {
-      setMicPreviewLoading(false);
-    }
-  }, [drawMicWave, ensureMicrophoneReady]);
 
   const syncVoiceMonitorAudio = useCallback(async (shouldListen: boolean) => {
     const audio = voiceMonitorAudioRef.current;
@@ -1396,8 +1604,116 @@ const MusicSessionPage: React.FC = () => {
     });
   }, [cleanupLiveIndicators, cleanupStream]);
 
+  const finalizeLocalRecording = useCallback(async (): Promise<Blob | null> => {
+    const stopPayload = localRecordingStopPayloadRef.current;
+    if (!session || !isLocalRecordingActiveRef.current || !stopPayload) {
+      return null;
+    }
+
+    try {
+      await api.stopLocalRecording(stopPayload);
+      isLocalRecordingActiveRef.current = false;
+      localRecordingStopPayloadRef.current = null;
+      closeLocalAudioStream();
+      cleanupLiveIndicators();
+      const localUserId = getLocalRecordingUserId(session);
+      await api.getLatestLocalRecording(localUserId).catch(() => null);
+      return api.getLocalRecordingAudio(stopPayload.id_recordings);
+    } catch (error) {
+      isLocalRecordingActiveRef.current = false;
+      localRecordingStopPayloadRef.current = null;
+      closeLocalAudioStream();
+      cleanupLiveIndicators();
+      throw error;
+    }
+  }, [cleanupLiveIndicators, closeLocalAudioStream, session]);
+
+  const stopLocalRecordingIfActive = useCallback(async () => {
+    const stopPayload = localRecordingStopPayloadRef.current;
+    if (!isLocalRecordingActiveRef.current || !stopPayload) {
+      closeLocalAudioStream();
+      return;
+    }
+
+    try {
+      await api.stopLocalRecording(stopPayload);
+    } catch (error) {
+      console.warn('Falha ao descartar gravação local ativa:', error);
+    } finally {
+      isLocalRecordingActiveRef.current = false;
+      localRecordingStopPayloadRef.current = null;
+      closeLocalAudioStream();
+      cleanupLiveIndicators();
+    }
+  }, [cleanupLiveIndicators, closeLocalAudioStream]);
+
   const startRecording = useCallback(async () => {
     try {
+      if (currentStepRef.current?.type === 'record') {
+        if (!session) {
+          throw new Error('Sessão indisponível para gravação local.');
+        }
+
+        if (mediaRecorderRef.current) {
+          await finalizeRecording(true);
+        }
+
+        if (isLocalRecordingActiveRef.current) {
+          await finalizeLocalRecording();
+        }
+
+        clearPendingReview();
+
+        if (!localRecordingReadyRef.current) {
+          throw new Error('Escolha e teste um microfone antes de começar a gravação da música.');
+        }
+
+        const step = currentStepRef.current;
+        const promptText = `Gravação da música ${step.musicName || ''}`.trim();
+
+        await startLocalRecordingWithRecovery({
+          user_id: getLocalRecordingUserId(session),
+          session_id: session.id,
+          id_recordings: createLocalRecordingId(),
+          dataset_id: session.dataset_id,
+          bloco_id: step.blockId,
+          created_at: new Date().toISOString(),
+          audio_id: step.id,
+          step_type: 'music',
+          frase_content: promptText,
+          text_prompt: promptText,
+          background_audio_url: selectedMonitorUrl || undefined,
+        });
+
+        setHasStartedCurrentTake(true);
+        setIsRecording(true);
+        setIsMicPaused(false);
+        setTimer(0);
+        setRuntimeError(null);
+
+        try {
+          await ensureMicrophoneReady();
+          window.requestAnimationFrame(() => {
+            drawMicWave();
+          });
+        } catch (error) {
+          console.warn('Não foi possível abrir o microfone no navegador para desenhar a onda real:', error);
+          setDbfs(-100);
+          const canvas = canvasRef.current;
+          const context = canvas?.getContext('2d');
+          if (canvas && context) {
+            context.fillStyle = '#101217';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+          }
+        }
+
+        if (canUseVoiceMonitoring && voiceMonitoring) {
+          await syncVoiceMonitorAudio(true);
+        }
+
+        return;
+      }
+
       if (mediaRecorderRef.current) {
         await finalizeRecording(true);
       }
@@ -1440,7 +1756,11 @@ const MusicSessionPage: React.FC = () => {
       cleanupStream();
       cleanupLiveIndicators();
     }
-  }, [canUseVoiceMonitoring, cleanupLiveIndicators, cleanupStream, clearPendingReview, drawMicWave, ensureMicrophoneReady, finalizeRecording, syncVoiceMonitorAudio, voiceMonitoring]);
+  }, [canUseVoiceMonitoring, cleanupLiveIndicators, cleanupStream, clearPendingReview, drawMicWave, ensureMicrophoneReady, finalizeLocalRecording, finalizeRecording, selectedMonitorUrl, session, startLocalRecordingWithRecovery, syncVoiceMonitorAudio, voiceMonitoring]);
+
+  useEffect(() => {
+    startRecordingRef.current = startRecording;
+  }, [startRecording]);
 
   const getAudioDataAndMetadata = useCallback((audioBlob: Blob): Promise<{ duration: number; sampleRate: number; buffer: AudioBuffer }> => {
     return new Promise((resolve, reject) => {
@@ -1742,12 +2062,14 @@ const MusicSessionPage: React.FC = () => {
   const uploadStepRecording = useCallback(async (step: PhraseStep | RecordStep, audioBlob: Blob) => {
     if (!session) return;
 
+    if (step.type === 'record') {
+      await api.uploadLatestLocalRecording(getLocalRecordingUserId(session));
+      return;
+    }
+
     const { duration, sampleRate, buffer } = await getAudioDataAndMetadata(audioBlob);
     const wavBlob = audioBufferToWav(buffer);
-    const promptText = step.type === 'phrase'
-      ? step.prompt
-      : `Gravação da música ${step.musicName || ''}`.trim();
-    const stepType = step.type === 'record' ? 'music' : 'spoken';
+    const promptText = step.prompt;
 
     await api.uploadRecording(
       session.id,
@@ -1762,11 +2084,11 @@ const MusicSessionPage: React.FC = () => {
       promptText,
       undefined,
       step.id,
-      stepType,
-      step.type === 'record' ? selectedMonitorUrl || undefined : undefined,
+      'spoken',
+      undefined,
       promptText,
     );
-  }, [getAudioDataAndMetadata, selectedMonitorUrl, session]);
+  }, [getAudioDataAndMetadata, session]);
 
   const handleSaveCurrentStep = useCallback(async () => {
     if (!currentStep) return;
@@ -1804,7 +2126,9 @@ const MusicSessionPage: React.FC = () => {
     setRuntimeError(null);
 
     try {
-      const audioBlob = await finalizeRecording(true);
+      const audioBlob = currentStep.type === 'record'
+        ? await finalizeLocalRecording()
+        : await finalizeRecording(true);
       stopMusicPlayback(true);
       stopMetronome();
 
@@ -1829,7 +2153,7 @@ const MusicSessionPage: React.FC = () => {
     } finally {
       setIsProcessing(false);
     }
-  }, [advanceToNextStep, clearPendingReview, currentStep, finalizeRecording, hasStartedCurrentTake, pendingReviewBlob, resetTakeState, stopMetronome, stopMusicPlayback, uploadStepRecording]);
+  }, [advanceToNextStep, clearPendingReview, currentStep, finalizeLocalRecording, finalizeRecording, hasStartedCurrentTake, pendingReviewBlob, resetTakeState, stopMetronome, stopMusicPlayback, uploadStepRecording]);
 
   const resolveMetronomeConfig = useCallback(() => {
     if (!metronomeConfig.enabled) {
@@ -1950,6 +2274,11 @@ const MusicSessionPage: React.FC = () => {
     }
 
     if (currentStep.type === 'record') {
+      if (isLocalRecordingActiveRef.current) {
+        await handleSaveCurrentStep();
+        return;
+      }
+
       const recorder = mediaRecorderRef.current;
 
       if (!hasStartedCurrentTake) {
@@ -2012,6 +2341,7 @@ const MusicSessionPage: React.FC = () => {
     currentStep,
     hasStartedCurrentTake,
     hasTriggeredListenPlayback,
+    handleSaveCurrentStep,
     isMusicPlaying,
     mediaRecorderRef,
     musicProgress,
@@ -2040,7 +2370,11 @@ const MusicSessionPage: React.FC = () => {
       return;
     }
 
-    await finalizeRecording(true);
+    if (currentStep.type === 'record') {
+      await stopLocalRecordingIfActive();
+    } else {
+      await finalizeRecording(true);
+    }
     resetTakeState();
     stopMusicPlayback(true);
     stopMetronome();
@@ -2052,7 +2386,23 @@ const MusicSessionPage: React.FC = () => {
     window.setTimeout(() => {
       void startRecording();
     }, 150);
-  }, [clearPendingReview, currentStep, finalizeRecording, queueListenPlayback, resetTakeState, startRecording, stopMetronome, stopMusicPlayback]);
+  }, [clearPendingReview, currentStep, finalizeRecording, queueListenPlayback, resetTakeState, startRecording, stopLocalRecordingIfActive, stopMetronome, stopMusicPlayback]);
+
+  const handleRetakeReviewedMusic = useCallback(async () => {
+    setRuntimeError(null);
+    setStepAudioError(null);
+    clearPendingReview();
+    await stopLocalRecordingIfActive();
+    resetTakeState();
+    stopMusicPlayback(true);
+    stopMetronome();
+    localRecordingReadyRef.current = true;
+    setLocalRecordingReady(true);
+    setRecordSetupTab('rhythm');
+    window.setTimeout(() => {
+      queueCurrentRecordTake(true);
+    }, 150);
+  }, [clearPendingReview, queueCurrentRecordTake, resetTakeState, stopLocalRecordingIfActive, stopMetronome, stopMusicPlayback]);
 
   const replaceCurrentPhrase = useCallback(() => {
     const step = currentStep;
@@ -2092,7 +2442,11 @@ const MusicSessionPage: React.FC = () => {
     clearPendingReview();
     stopMusicPlayback(true);
     stopMetronome();
-    await finalizeRecording(true);
+    if (currentStep.type === 'record') {
+      await stopLocalRecordingIfActive();
+    } else {
+      await finalizeRecording(true);
+    }
     resetTakeState();
 
     if (currentStep.type === 'phrase') {
@@ -2109,7 +2463,7 @@ const MusicSessionPage: React.FC = () => {
     }
 
     await advanceToNextStep();
-  }, [advanceToNextStep, clearPendingReview, currentStep, finalizeRecording, replaceCurrentPhrase, resetTakeState, skipCount, stopMetronome, stopMusicPlayback]);
+  }, [advanceToNextStep, clearPendingReview, currentStep, finalizeRecording, replaceCurrentPhrase, resetTakeState, skipCount, stopLocalRecordingIfActive, stopMetronome, stopMusicPlayback]);
 
   const handleGoBack = useCallback(async () => {
     if (currentStepIndex === 0) return;
@@ -2119,10 +2473,23 @@ const MusicSessionPage: React.FC = () => {
     clearPendingReview();
     stopMusicPlayback(true);
     stopMetronome();
-    await finalizeRecording(true);
+    if (currentStepRef.current?.type === 'record') {
+      await stopLocalRecordingIfActive();
+    } else {
+      await finalizeRecording(true);
+    }
     resetTakeState();
     setCurrentStepIndex(previous => Math.max(0, previous - 1));
-  }, [clearPendingReview, currentStepIndex, finalizeRecording, resetTakeState, stopMetronome, stopMusicPlayback]);
+  }, [clearPendingReview, currentStepIndex, finalizeRecording, resetTakeState, stopLocalRecordingIfActive, stopMetronome, stopMusicPlayback]);
+
+  const ensureLocalRecordingApiOnline = useCallback(async () => {
+    try {
+      await api.localRecordingHealth();
+    } catch (error) {
+      console.error('API local de gravação indisponível:', error);
+      throw new Error(LOCAL_RECORDING_API_REQUIRED_MESSAGE);
+    }
+  }, []);
 
   const handleStartSession = useCallback(async () => {
     const packageConfig = getPackageConfig(setup.packageKey);
@@ -2147,6 +2514,7 @@ const MusicSessionPage: React.FC = () => {
     setSetupError(null);
 
     try {
+      await ensureLocalRecordingApiOnline();
       const preparedSteps = await buildSteps(setup);
       if (preparedSteps.length === 0) {
         setSetupError('Não há etapas suficientes para montar esta sessão.');
@@ -2176,13 +2544,14 @@ const MusicSessionPage: React.FC = () => {
     } finally {
       setIsPreparingSession(false);
     }
-  }, [buildSteps, emotionPhraseGroups.length, neutralPhrasePool.length, session, setup]);
+  }, [buildSteps, emotionPhraseGroups.length, ensureLocalRecordingApiOnline, neutralPhrasePool.length, session, setup]);
 
   const handleFinalizeCurrentAndStartNew = useCallback(async () => {
     if (!existingSessionInfo) return;
 
     setIsProcessing(true);
     try {
+      await ensureLocalRecordingApiOnline();
       stopMetronome();
       await api.put(`/sessions/${existingSessionInfo.id}`, {
         ...existingSessionInfo,
@@ -2212,7 +2581,7 @@ const MusicSessionPage: React.FC = () => {
     } finally {
       setIsProcessing(false);
     }
-  }, [existingSessionInfo, setup, stopMetronome]);
+  }, [ensureLocalRecordingApiOnline, existingSessionInfo, setup, stopMetronome]);
 
   const handleResumeExistingSession = useCallback(async () => {
     if (!existingSessionInfo) return;
@@ -2318,7 +2687,7 @@ const MusicSessionPage: React.FC = () => {
       ? 6
       : activeButtonTutorialKey === 'listen-controls'
         ? 5
-        : 5;
+        : 4;
 
     if (buttonTutorialStep >= totalSteps - 1) {
       seenButtonTutorialKeysRef.current.add(activeButtonTutorialKey);
@@ -2538,20 +2907,28 @@ const MusicSessionPage: React.FC = () => {
 
   useEffect(() => {
     clearPendingReview();
-  }, [clearPendingReview, currentStepId]);
+    clearMicTestAudio();
+    setRecordSetupTab('microphone');
+  }, [clearMicTestAudio, clearPendingReview, currentStepId]);
 
   useEffect(() => {
     setSkipCount(0);
   }, [currentStepId]);
 
   useEffect(() => {
-    if (currentStep?.type !== 'record' || !showRecordSetup || stepCountdown !== null) {
+    if (currentStep?.type !== 'record') {
       setMicPreviewReady(false);
+      setLocalRecordingReady(false);
+      closeLocalAudioStream();
       return;
     }
 
-    void prepareMicPreview();
-  }, [currentStep?.type, prepareMicPreview, showRecordSetup, stepCountdown]);
+    if (!showRecordSetup || stepCountdown !== null) {
+      return;
+    }
+
+    void prepareLocalRecordingMicrophone();
+  }, [closeLocalAudioStream, currentStep?.type, prepareLocalRecordingMicrophone, showRecordSetup, stepCountdown]);
 
   useEffect(() => {
     if (buttonTutorialStep === null || !activeButtonTutorialKey) return;
@@ -2631,7 +3008,7 @@ const MusicSessionPage: React.FC = () => {
         switch (buttonTutorialStep) {
           case 0:
             rect = mainActionButtonRef.current?.getBoundingClientRect();
-            config.text = 'Depois de ajustar tudo, clique aqui para começar a gravação. Durante a take, ele também pausa e retoma.';
+            config.text = 'Depois de ajustar tudo, clique aqui para começar a gravação. Durante a take, use para parar e revisar.';
             break;
           case 1:
             rect = restartButtonRef.current?.getBoundingClientRect();
@@ -2642,10 +3019,6 @@ const MusicSessionPage: React.FC = () => {
             config.text = 'Quando terminar de cantar, clique aqui para salvar a take e continuar.';
             break;
           case 3:
-            rect = skipButtonRef.current?.getBoundingClientRect();
-            config.text = 'Se não quiser gravar esta música agora, você pode pular por aqui.';
-            break;
-          case 4:
             rect = backButtonRef.current?.getBoundingClientRect();
             config.text = 'Este botão volta para a etapa anterior da sessão.';
             break;
@@ -2694,7 +3067,7 @@ const MusicSessionPage: React.FC = () => {
       };
     }
 
-    if (buttonTutorialStep !== null) {
+    if (buttonTutorialStepRef.current !== null) {
       return () => {
         cancelled = true;
       };
@@ -2718,7 +3091,7 @@ const MusicSessionPage: React.FC = () => {
 
     if (currentStepType === 'phrase') {
       timeoutId = window.setTimeout(() => {
-        void startRecording();
+        void startRecordingRef.current();
       }, 250);
 
       return () => {
@@ -2767,7 +3140,7 @@ const MusicSessionPage: React.FC = () => {
       clearStepCountdown();
       stopMetronome();
     };
-  }, [beginStepCountdown, buttonTutorialStep, buttonTutorialVersion, clearStepCountdown, currentButtonTutorialKey, currentStepId, currentStepMusicId, currentStepType, ensureMusicDetails, playAudioUrl, resetTakeState, showStepTutorialModal, startRecording, stepTutorialVersion, stopMetronome, stopMusicPlayback]);
+  }, [beginStepCountdown, clearStepCountdown, currentButtonTutorialKey, currentStepId, currentStepMusicId, currentStepType, ensureMusicDetails, playAudioUrl, resetTakeState, showStepTutorialModal, stopMetronome, stopMusicPlayback]);
 
   useEffect(() => {
     if (!isRecording || isMicPaused) return;
@@ -2795,7 +3168,9 @@ const MusicSessionPage: React.FC = () => {
       setIsProcessing(true);
 
       try {
-        const audioBlob = await finalizeRecording(true);
+        const audioBlob = currentStep.type === 'record'
+          ? await finalizeLocalRecording()
+          : await finalizeRecording(true);
         stopMusicPlayback(true);
         stopMetronome();
 
@@ -2832,6 +3207,7 @@ const MusicSessionPage: React.FC = () => {
   }, [
     clearPendingReview,
     currentStep,
+    finalizeLocalRecording,
     finalizeRecording,
     isMicPaused,
     isRecording,
@@ -2878,6 +3254,7 @@ const MusicSessionPage: React.FC = () => {
 
     return () => {
       clearPendingReview();
+      clearMicTestAudio();
       stopMusicPlayback(true);
       preloadedAudioElements.forEach((audio) => {
         audio.pause();
@@ -2886,11 +3263,20 @@ const MusicSessionPage: React.FC = () => {
       });
       preloadedAudioElements.length = 0;
       preloadedAudioUrls.clear();
+      if (isLocalRecordingActiveRef.current && localRecordingStopPayloadRef.current) {
+        const stopPayload = localRecordingStopPayloadRef.current;
+        isLocalRecordingActiveRef.current = false;
+        localRecordingStopPayloadRef.current = null;
+        void api.stopLocalRecording(stopPayload).catch((error) => {
+          console.warn('Falha ao encerrar gravação local ao sair da página:', error);
+        });
+      }
+      closeLocalAudioStream();
       stopMetronome();
       cleanupLiveIndicators();
       cleanupStream();
     };
-  }, [cleanupLiveIndicators, cleanupStream, clearPendingReview, stopMetronome, stopMusicPlayback]);
+  }, [cleanupLiveIndicators, cleanupStream, clearMicTestAudio, clearPendingReview, closeLocalAudioStream, stopMetronome, stopMusicPlayback]);
 
   const mainToggleLabel = useMemo(() => {
     if (!currentStep) return 'Iniciar';
@@ -2907,11 +3293,12 @@ const MusicSessionPage: React.FC = () => {
     }
 
     if (currentStep.type === 'record') {
-      return isMicPaused ? 'Retomar gravação' : 'Pausar gravação';
+      if (isRecording && !isMicPaused) return 'Parar e revisar';
+      return 'Parar e revisar';
     }
 
     return isMicPaused ? 'Retomar' : 'Pausar';
-  }, [currentListenEnded, currentStep, hasStartedCurrentTake, hasTriggeredListenPlayback, isMicPaused, isMusicPlaying, musicProgress, stepCountdown]);
+  }, [currentListenEnded, currentStep, hasStartedCurrentTake, hasTriggeredListenPlayback, isMicPaused, isMusicPlaying, isRecording, musicProgress, stepCountdown]);
 
   const restartLabel = useMemo(() => {
     if (!currentStep) return 'Recomeçar';
@@ -2922,7 +3309,7 @@ const MusicSessionPage: React.FC = () => {
 
   const skipLabel = useMemo(() => {
     if (!currentStep) return 'Pular';
-    if (currentStep.type === 'record') return 'Pular música';
+    if (currentStep.type === 'record') return '';
     if (currentStep.type === 'listen') return 'Pular audição';
     if (currentStep.alternatives.length === 0) return 'Pular frase';
     return `Trocar frase (${skipCount + 1}/3)`;
@@ -3722,7 +4109,7 @@ const MusicSessionPage: React.FC = () => {
             </Box>
           )}
           <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
-            <Button variant="outlined" onClick={() => { void handleRestartCurrentStep(); }} disabled={isProcessing}>
+            <Button variant="outlined" onClick={() => { void handleRetakeReviewedMusic(); }} disabled={isProcessing}>
               Regravar música
             </Button>
             <Button variant="contained" onClick={() => { void handleSaveCurrentStep(); }} disabled={isProcessing}>
@@ -4055,7 +4442,7 @@ const MusicSessionPage: React.FC = () => {
                       </>
                     )}
 
-                    {!isRecordPreStart && (
+                    {!showRecordSetup && !isRecordPreStart && localRecordingReady && (
                       <>
                         {selectedMonitorUrl ? (
                           <AudioVisualizer
@@ -4088,48 +4475,127 @@ const MusicSessionPage: React.FC = () => {
                           <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'success.dark', mb: 1.25 }}>
                             Antes de gravar
                           </Typography>
-                          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, gap: 1.25 }}>
-                            {[
-                              '1. Escolha o que vai ouvir no fone.',
-                              '2. Ajuste o metrônomo se precisar.',
-                              '3. Clique no botão verde para começar.',
-                            ].map((item) => (
-                              <Paper
-                                key={item}
-                                variant="outlined"
-                                sx={{
-                                  p: 1.5,
-                                  borderRadius: 2.5,
-                                  bgcolor: 'rgba(255,255,255,0.72)',
-                                  borderColor: 'rgba(46,125,50,0.12)',
-                                }}
-                              >
-                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                  {item}
-                                </Typography>
-                              </Paper>
-                            ))}
-                          </Box>
+                          <Tabs
+                            value={recordSetupTab}
+                            onChange={(_, value: RecordSetupTab) => {
+                              if (value === 'monitor' && !localRecordingReady) return;
+                              if (value === 'rhythm' && !localRecordingReady) return;
+                              setRecordSetupTab(value);
+                            }}
+                            variant="scrollable"
+                            scrollButtons="auto"
+                            sx={{ minHeight: 40 }}
+                          >
+                            <Tab value="microphone" label="1. Microfone" />
+                            <Tab value="monitor" label="2. Áudio de apoio" disabled={!localRecordingReady} />
+                            <Tab value="rhythm" label="3. Ritmo e gravar" disabled={!localRecordingReady} />
+                          </Tabs>
                         </Paper>
 
-                        {micPreviewLoading ? (
-                          <Box sx={{ display: 'flex', justifyContent: 'center', py: 1 }}>
-                            <CircularProgress size={26} />
-                          </Box>
-                        ) : (
-                          <Alert severity={micSignalDetected ? 'success' : 'warning'}>
-                            {micSignalDetected ? 'Microfone detectado.' : 'Sem sinal de voz no momento.'}
-                          </Alert>
+                        {recordSetupTab === 'microphone' && (
+                        <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: 'rgba(25,118,210,0.03)' }}>
+                          <Typography variant="overline" sx={{ color: 'primary.main', fontWeight: 800, letterSpacing: '0.08em' }}>
+                            Microfone
+                          </Typography>
+                          <Typography variant="h6" sx={{ mb: 0.75 }}>
+                            1. Escolha e teste antes da música
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 2.25 }}>
+                            Grave uma amostra curta: aproxime-se do microfone e fale ou cante uma frase no volume que usará na música.
+                          </Typography>
+
+                          <Stack spacing={2}>
+                            <FormControl fullWidth disabled={micPreviewLoading || stepCountdown !== null || hasStartedCurrentTake}>
+                              <InputLabel id="local-microphone-label">Microfone local</InputLabel>
+                              <Select
+                                labelId="local-microphone-label"
+                                label="Microfone local"
+                                value={selectedLocalMicrophoneId}
+                                onChange={(event: SelectChangeEvent<string>) => {
+                                  const microphoneId = event.target.value;
+                                  setSelectedLocalMicrophoneId(microphoneId);
+                                  localStorage.setItem(LOCAL_RECORDING_MIC_STORAGE_KEY, microphoneId);
+                                  setLocalRecordingReady(false);
+                                  setMicPreviewReady(false);
+                                  setDbfs(-100);
+                                  clearMicTestAudio();
+                                  closeLocalAudioStream();
+                                }}
+                              >
+                                {localMicrophones.map((microphone, index) => {
+                                  const microphoneId = getLocalMicrophoneId(microphone);
+                                  return (
+                                    <MenuItem key={microphoneId || index} value={microphoneId}>
+                                      {getLocalMicrophoneLabel(microphone, index)}
+                                    </MenuItem>
+                                  );
+                                })}
+                              </Select>
+                              <FormHelperText>
+                                Se a lista estiver vazia, confirme que a API local está rodando e atualize a página.
+                              </FormHelperText>
+                            </FormControl>
+
+                            <Box display="flex" flexWrap="wrap" gap={1.5} alignItems="center">
+                              <Button
+                                variant="contained"
+                                onClick={() => {
+                                  void handleTestLocalMicrophone();
+                                }}
+                                disabled={micPreviewLoading || !selectedLocalMicrophoneId || stepCountdown !== null || hasStartedCurrentTake}
+                              >
+                                {micPreviewLoading ? (
+                                  <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
+                                    <CircularProgress size={18} color="inherit" />
+                                    {isMicTestRecording ? 'Gravando teste...' : 'Preparando...'}
+                                  </Box>
+                                ) : 'Gravar teste de 3s'}
+                              </Button>
+
+                              <Button
+                                variant="outlined"
+                                onClick={() => {
+                                  void prepareLocalRecordingMicrophone();
+                                }}
+                                disabled={micPreviewLoading || stepCountdown !== null || hasStartedCurrentTake}
+                              >
+                                Atualizar lista
+                              </Button>
+                            </Box>
+
+                            {micTestAudioUrl && (
+                              <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2.5, bgcolor: 'background.paper' }}>
+                                <Typography variant="body2" sx={{ fontWeight: 700, mb: 1 }}>
+                                  Ouça o teste do microfone
+                                </Typography>
+                                <Paper elevation={0} sx={{ height: 104, bgcolor: '#101217', borderRadius: 2, overflow: 'hidden', mb: 1.5 }}>
+                                  <canvas ref={micTestCanvasRef} width="600" height="100" style={{ width: '100%', height: '100%' }} />
+                                </Paper>
+                                <audio controls src={micTestAudioUrl} style={{ width: '100%' }} />
+                              </Paper>
+                            )}
+
+                            <Alert severity={!localMicrophones.length ? 'error' : !localRecordingReady ? 'warning' : 'success'}>
+                              {!localMicrophones.length
+                                ? 'Inicie a API local de gravação em http://localhost:9000 para listar os microfones.'
+                                : localRecordingReady
+                                  ? 'Teste gravado. Ouça a amostra acima; se sua voz estiver clara e no volume certo, siga para o áudio de apoio.'
+                                  : 'Selecione um microfone e clique em Gravar teste de 3s antes de escolher o instrumental.'}
+                            </Alert>
+
+                            {localRecordingReady && (
+                              <Box display="flex" justifyContent="flex-end">
+                                <Button variant="contained" onClick={() => setRecordSetupTab('monitor')}>
+                                  Continuar para áudio de apoio
+                                </Button>
+                              </Box>
+                            )}
+                          </Stack>
+                        </Paper>
                         )}
 
-                        <Box
-                          sx={{
-                            display: 'grid',
-                            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
-                            gap: 2,
-                          }}
-                        >
-                          <Paper variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
+                        {recordSetupTab === 'monitor' && localRecordingReady && (
+                            <Paper variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
                             <Typography variant="overline" sx={{ color: 'primary.main', fontWeight: 800, letterSpacing: '0.08em' }}>
                               Áudio de apoio
                             </Typography>
@@ -4194,10 +4660,31 @@ const MusicSessionPage: React.FC = () => {
                                   )}
                                 />
                               </Paper>
-                            </Stack>
-                          </Paper>
 
-                          <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: 'rgba(25,118,210,0.03)' }}>
+                              <Box display="flex" justifyContent="space-between" flexWrap="wrap" gap={1.5}>
+                                <Button variant="outlined" onClick={() => setRecordSetupTab('microphone')}>
+                                  Voltar ao microfone
+                                </Button>
+                                <Button variant="contained" onClick={() => setRecordSetupTab('rhythm')}>
+                                  Continuar para ritmo
+                                </Button>
+                              </Box>
+                            </Stack>
+                            </Paper>
+                        )}
+
+                        {recordSetupTab === 'rhythm' && !localRecordingReady && (
+                          <Alert severity="warning" action={(
+                            <Button color="inherit" size="small" onClick={() => setRecordSetupTab('microphone')}>
+                              Testar microfone
+                            </Button>
+                          )}>
+                            Teste o microfone antes de começar a gravação.
+                          </Alert>
+                        )}
+
+                        {recordSetupTab === 'rhythm' && localRecordingReady && (
+                            <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: 'rgba(25,118,210,0.03)' }}>
                             <Typography variant="overline" sx={{ color: 'primary.main', fontWeight: 800, letterSpacing: '0.08em' }}>
                               Ritmo
                             </Typography>
@@ -4299,9 +4786,25 @@ const MusicSessionPage: React.FC = () => {
                               <Alert severity="warning" sx={{ borderRadius: 2.5 }}>
                                 Use fones para o metrônomo não vazar na gravação.
                               </Alert>
+
+                              <Box display="flex" justifyContent="space-between" flexWrap="wrap" gap={1.5}>
+                                <Button variant="outlined" onClick={() => setRecordSetupTab('monitor')}>
+                                  Voltar ao áudio de apoio
+                                </Button>
+                                <Button
+                                  variant="contained"
+                                  color="success"
+                                  onClick={() => {
+                                    queueCurrentRecordTake(true);
+                                  }}
+                                  disabled={isProcessing || stepCountdown !== null || hasStartedCurrentTake || !localRecordingReady}
+                                >
+                                  Começar gravação
+                                </Button>
+                              </Box>
                             </Stack>
-                          </Paper>
-                        </Box>
+                            </Paper>
+                        )}
                       </Stack>
                     ) : (
                       <Paper
@@ -4322,8 +4825,20 @@ const MusicSessionPage: React.FC = () => {
                           {recordSessionSummary}
                         </Typography>
                         <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                          Pause a gravação se quiser rever ou mudar essas opções.
+                          Pare a gravação para revisar ou regravar se precisar mudar essas opções.
                         </Typography>
+                        <Box sx={{ mt: 2.5, display: 'flex', justifyContent: 'flex-end' }}>
+                          <Button
+                            variant="contained"
+                            color="error"
+                            onClick={() => {
+                              void handleSaveCurrentStep();
+                            }}
+                            disabled={isProcessing || !isRecording}
+                          >
+                            {isProcessing ? <CircularProgress size={22} color="inherit" /> : 'Parar gravação e revisar'}
+                          </Button>
+                        </Box>
                       </Paper>
                     )}
                   </Stack>
@@ -4358,6 +4873,10 @@ const MusicSessionPage: React.FC = () => {
               variant="outlined"
               startIcon={<ArrowBackIcon />}
               onClick={() => {
+                if (isButtonTutorialActive) {
+                  handleNextButtonTutorialStep();
+                  return;
+                }
                 void handleGoBack();
               }}
               disabled={isProcessing || currentStepIndex === 0}
@@ -4365,7 +4884,13 @@ const MusicSessionPage: React.FC = () => {
               Voltar
             </Button>
 
-            <Button ref={restartButtonRef} variant="outlined" onClick={() => { void handleRestartCurrentStep(); }} disabled={isProcessing || !currentStep || stepCountdown !== null}>
+            <Button ref={restartButtonRef} variant="outlined" onClick={() => {
+              if (isButtonTutorialActive) {
+                handleNextButtonTutorialStep();
+                return;
+              }
+              void handleRestartCurrentStep();
+            }} disabled={isProcessing || !currentStep || stepCountdown !== null}>
               {restartLabel}
             </Button>
 
@@ -4375,32 +4900,46 @@ const MusicSessionPage: React.FC = () => {
               color={emphasizeRecordStart ? 'success' : 'primary'}
               startIcon={<PlayArrowIcon />}
               onClick={() => {
+                if (isButtonTutorialActive) {
+                  handleNextButtonTutorialStep();
+                  return;
+                }
                 void handleToggleMainAction();
               }}
-              disabled={isProcessing || stepCountdown !== null || (currentStep?.type === 'listen' && listeningUnavailable)}
+              disabled={isProcessing || stepCountdown !== null || (currentStep?.type === 'listen' && listeningUnavailable) || (currentStep?.type === 'record' && !hasStartedCurrentTake && !localRecordingReady)}
             >
               {mainToggleLabel}
             </Button>
           </Box>
 
           <Box display="flex" flexWrap="wrap" gap={2}>
-            <Button
-              ref={skipButtonRef}
-              variant="outlined"
-              color="warning"
-              startIcon={<SkipNextIcon />}
-              onClick={() => {
-                void handleSkipCurrentStep();
-              }}
-              disabled={isProcessing || !currentStep}
-            >
-              {skipLabel}
-            </Button>
+            {currentStep?.type !== 'record' && (
+              <Button
+                ref={skipButtonRef}
+                variant="outlined"
+                color="warning"
+                startIcon={<SkipNextIcon />}
+                onClick={() => {
+                  if (isButtonTutorialActive) {
+                    handleSkipButtonTutorial();
+                    return;
+                  }
+                  void handleSkipCurrentStep();
+                }}
+                disabled={isProcessing || !currentStep}
+              >
+                {skipLabel}
+              </Button>
+            )}
 
             <Button
               ref={saveButtonRef}
               variant="contained"
               onClick={() => {
+                if (isButtonTutorialActive) {
+                  handleNextButtonTutorialStep();
+                  return;
+                }
                 void handleSaveCurrentStep();
               }}
               disabled={isProcessing || (currentStep?.type !== 'listen' && !hasStartedCurrentTake && !pendingReviewBlob)}

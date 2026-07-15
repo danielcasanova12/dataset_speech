@@ -7,7 +7,10 @@ export const setApiToken = (token: string | null) => {
   memoryToken = token;
 };
 
+export const getApiToken = () => memoryToken || sessionStorage.getItem('access_token') || null;
+
 const buildApiUrl = (path: string) => `${API_BASE_URL}${path}`;
+const LOCAL_RECORDING_API_BASE_URL = (process.env.REACT_APP_LOCAL_RECORDING_API_URL || 'http://localhost:9000').replace(/\/+$/, '');
 
 const getHeaders = (contentType: string | null = 'application/json') => {
   const headers: HeadersInit = {};
@@ -157,6 +160,50 @@ export interface MusicAudioAccessResponse {
   expires_in: number | null;
   mime_type: string | null;
   size_bytes: number | null;
+}
+
+export interface LocalMicrophone {
+  id?: string | number;
+  microphone_id?: string | number;
+  index?: string | number;
+  device_id?: string | number;
+  name?: string;
+  label?: string;
+  is_default?: boolean;
+  selected?: boolean;
+}
+
+export interface LocalRecordingMetadata {
+  id_recordings?: number | string;
+  recording_id?: number | string;
+  user_id?: number | string;
+  session_id?: number | string;
+  duration?: number;
+  sample_rate?: number;
+  format?: string;
+  path?: string;
+  audio_path?: string;
+  [key: string]: any;
+}
+
+export interface LocalRecordingStartPayload {
+  user_id: number;
+  session_id: number;
+  id_recordings: number;
+  dataset_id: number;
+  bloco_id: number;
+  created_at: string;
+  audio_id: string;
+  step_type: 'music';
+  frase_content?: string;
+  text_prompt?: string;
+  background_audio_url?: string;
+}
+
+export interface LocalRecordingStopPayload {
+  user_id: number;
+  session_id: number;
+  id_recordings: number;
 }
 
 export interface MusicUpsertPayload {
@@ -560,6 +607,136 @@ export const api = {
       throw new Error(await getErrorMessage(response, 'Failed to upload recording'));
     }
     return response.json();
+  },
+
+  localRecordingHealth: async (): Promise<void> => {
+    const response = await fetch(`${LOCAL_RECORDING_API_BASE_URL}/health`, { method: 'GET' });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, 'API local de gravação indisponível.'));
+    }
+  },
+
+  listLocalMicrophones: async (): Promise<LocalMicrophone[]> => {
+    const response = await fetch(`${LOCAL_RECORDING_API_BASE_URL}/api/microphones`, { method: 'GET' });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, 'Não foi possível listar microfones na API local.'));
+    }
+
+    const data = await response.json();
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data.microphones)) return data.microphones;
+    if (Array.isArray(data.devices)) return data.devices;
+    return [];
+  },
+
+  getSelectedLocalMicrophone: async (): Promise<LocalMicrophone | null> => {
+    const response = await fetch(`${LOCAL_RECORDING_API_BASE_URL}/api/microphones/selected`, { method: 'GET' });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, 'Não foi possível consultar o microfone selecionado na API local.'));
+    }
+
+    return response.json();
+  },
+
+  selectLocalMicrophone: async (microphoneId: string | number): Promise<void> => {
+    const response = await fetch(`${LOCAL_RECORDING_API_BASE_URL}/api/microphones/selected`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        microphone_id: microphoneId,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, 'Não foi possível selecionar o microfone na API local.'));
+    }
+  },
+
+  startLocalRecording: async (payload: LocalRecordingStartPayload): Promise<LocalRecordingMetadata> => {
+    const response = await fetch(`${LOCAL_RECORDING_API_BASE_URL}/api/recordings/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, 'Não foi possível iniciar a gravação na API local.'));
+    }
+
+    const data = await response.json().catch(() => ({}));
+    if (data && data.success === false) {
+      const error = new Error(data.message || 'Não foi possível iniciar a gravação na API local.') as Error & {
+        active_recording?: LocalRecordingStopPayload;
+      };
+      error.active_recording = data.active_recording;
+      throw error;
+    }
+    return data;
+  },
+
+  stopLocalRecording: async (payload: LocalRecordingStopPayload): Promise<LocalRecordingMetadata> => {
+    const response = await fetch(`${LOCAL_RECORDING_API_BASE_URL}/api/recordings/stop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, 'Não foi possível parar a gravação na API local.'));
+    }
+
+    const data = await response.json().catch(() => ({}));
+    if (data && data.success === false) {
+      throw new Error(data.message || 'Não foi possível parar a gravação na API local.');
+    }
+    return data;
+  },
+
+  getLatestLocalRecording: async (userId: string | number): Promise<LocalRecordingMetadata> => {
+    const response = await fetch(`${LOCAL_RECORDING_API_BASE_URL}/api/recordings/latest/${encodeURIComponent(userId)}`, { method: 'GET' });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, 'Não foi possível carregar a última gravação local.'));
+    }
+
+    return response.json();
+  },
+
+  getLatestLocalRecordingAudio: async (userId: string | number): Promise<Blob> => {
+    const response = await fetch(`${LOCAL_RECORDING_API_BASE_URL}/api/recordings/latest/${encodeURIComponent(userId)}/audio`, { method: 'GET' });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, 'Não foi possível carregar o áudio local gravado.'));
+    }
+
+    return response.blob();
+  },
+
+  getLocalRecordingAudio: async (idRecordings: number): Promise<Blob> => {
+    const response = await fetch(`${LOCAL_RECORDING_API_BASE_URL}/api/recordings/${idRecordings}/audio`, { method: 'GET' });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, 'Não foi possível carregar o áudio local gravado.'));
+    }
+
+    return response.blob();
+  },
+
+  uploadLatestLocalRecording: async (userId: string | number): Promise<any> => {
+    const token = getApiToken();
+    const response = await fetch(`${LOCAL_RECORDING_API_BASE_URL}/api/recordings/latest/${encodeURIComponent(userId)}/upload`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, 'Não foi possível enviar a gravação local para a API remota.'));
+    }
+
+    return response.json().catch(() => ({}));
   },
 
   heartbeat: async (): Promise<void> => {
