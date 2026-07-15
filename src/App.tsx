@@ -4,6 +4,7 @@ import { CssBaseline } from '@mui/material';
 import HomePage from './pages/HomePage';
 import RecordingPage from './pages/RecordingPage';
 import MusicSessionPage from './pages/MusicSessionPage';
+import AdminRecordingsPage from './pages/AdminRecordingsPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import GuestRegisterPage from './pages/GuestRegisterPage';
@@ -37,6 +38,7 @@ function App() {
             <Route element={<PrivateRoute />}>
               <Route path="/recording/:datasetId" element={<RecordingPage key={location.pathname} />} />
               <Route path="/music-session" element={<MusicSessionPage key={location.pathname} />} />
+              <Route path="/admin/recordings" element={<AdminRecordingsPage />} />
             </Route>
           </Routes>
       </AuthProvider>

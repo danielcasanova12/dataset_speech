@@ -137,12 +137,26 @@ export interface MusicListItem {
   time_signature: string | null;
   has_vocal_audio: boolean;
   has_instrumental_audio: boolean;
+  vocal_audio_url?: string | null;
+  instrumental_audio_url?: string | null;
 }
 
 export interface MusicDetails extends MusicListItem {
   texto: string | null;
   vocal_audio_url: string | null;
   instrumental_audio_url: string | null;
+}
+
+export type MusicAudioKind = 'vocal' | 'instrumental';
+
+export interface MusicAudioAccessResponse {
+  music_id: number;
+  kind: MusicAudioKind;
+  audio_available: boolean;
+  audio_url: string | null;
+  expires_in: number | null;
+  mime_type: string | null;
+  size_bytes: number | null;
 }
 
 export interface MusicUpsertPayload {
@@ -153,6 +167,57 @@ export interface MusicUpsertPayload {
   time_signature?: string | null;
   vocal_audio_file?: File | null;
   instrumental_audio_file?: File | null;
+}
+
+export interface RecordingAudioRead {
+  id_recordings: number;
+  session_id: number;
+  dataset_id: number;
+  bloco_id: number;
+  frase_id: number | null;
+  duration: number | null;
+  format: string | null;
+  sample_rate: number | null;
+  frase_content: string | null;
+  is_test: boolean;
+  created_at: string;
+  audio_url?: string | null;
+  audio_source?: 's3' | 'local' | null;
+  audio_available?: boolean;
+  expires_in?: number | null;
+  mime_type?: string | null;
+  size_bytes?: number | null;
+  room_tone_start?: number | null;
+  room_tone_end?: number | null;
+  extra_info?: Record<string, any> | null;
+}
+
+export interface RecordingListResponse {
+  total: number;
+  page: number;
+  page_size: number;
+  items: RecordingAudioRead[];
+}
+
+export interface RecordingAudioAccessResponse {
+  recording_id: number;
+  audio_available: boolean;
+  audio_url: string | null;
+  expires_in: number | null;
+  mime_type: string | null;
+  size_bytes: number | null;
+  created_at: string | null;
+}
+
+export interface RecordingListFilters {
+  recording_id?: number | null;
+  session_id?: number | null;
+  user_id?: string | null;
+  latest_session?: boolean;
+  page?: number;
+  page_size?: number;
+  order?: 'asc' | 'desc';
+  has_audio?: boolean | null;
 }
 
 export const api = {
@@ -320,7 +385,21 @@ export const api = {
     return response.json();
   },
 
-  createMusic: async (payload: MusicUpsertPayload): Promise<MusicDetails> => {
+  getMusicAudio: async (id: number, kind: MusicAudioKind): Promise<MusicAudioAccessResponse> => {
+    const query = new URLSearchParams({ kind });
+    const response = await secureFetch(buildApiUrl(`/api/v1/musics/${id}/audio?${query.toString()}`), {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, `Não foi possível carregar o áudio ${kind} da música ${id}.`));
+    }
+
+    return response.json();
+  },
+
+  createMusic: async (payload: MusicUpsertPayload): Promise<MusicListItem> => {
     const formData = new FormData();
 
     if (payload.nome !== undefined) formData.append('nome', payload.nome);
@@ -346,7 +425,7 @@ export const api = {
     return response.json();
   },
 
-  updateMusic: async (id: number, payload: MusicUpsertPayload): Promise<MusicDetails> => {
+  updateMusic: async (id: number, payload: MusicUpsertPayload): Promise<MusicListItem> => {
     const formData = new FormData();
 
     if (payload.nome !== undefined) formData.append('nome', payload.nome);
@@ -367,6 +446,68 @@ export const api = {
 
     if (!response.ok) {
       throw new Error(await getErrorMessage(response, `Não foi possível atualizar a música ${id}.`));
+    }
+
+    return response.json();
+  },
+
+  listRecordings: async (filters: RecordingListFilters = {}): Promise<RecordingListResponse> => {
+    const query = new URLSearchParams();
+
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        query.append(key, String(value));
+      }
+    });
+
+    const querySuffix = query.toString() ? `?${query.toString()}` : '';
+    const response = await secureFetch(buildApiUrl(`/api/v1/recordings${querySuffix}`), {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, 'Não foi possível carregar as gravações.'));
+    }
+
+    return response.json();
+  },
+
+  getRecordingAudio: async (id: number): Promise<RecordingAudioAccessResponse> => {
+    const response = await secureFetch(buildApiUrl(`/api/v1/recordings/${id}/audio`), {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, `Não foi possível carregar o áudio da gravação ${id}.`));
+    }
+
+    return response.json();
+  },
+
+  getAdminUserIdByEmail: async (email: string): Promise<string> => {
+    const query = new URLSearchParams({ email });
+    const response = await secureFetch(buildApiUrl(`/admin/users/id-by-email?${query.toString()}`), {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, 'Não foi possível localizar o usuário por e-mail.'));
+    }
+
+    return response.json();
+  },
+
+  getAdminSessionRecordings: async (sessionId: number): Promise<RecordingAudioRead[]> => {
+    const response = await secureFetch(buildApiUrl(`/api/v1/recordings/sessions/${sessionId}/audios`), {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, 'Não foi possível carregar as gravações da sessão.'));
     }
 
     return response.json();

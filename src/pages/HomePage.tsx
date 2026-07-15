@@ -4,6 +4,7 @@ import { Button, Typography, Container, Box, Grid, IconButton, Alert, AlertTitle
 import RefreshIcon from '@mui/icons-material/Refresh';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import AddIcon from '@mui/icons-material/Add';
+import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
@@ -149,11 +150,11 @@ const HomePage: React.FC = () => {
             }
           >
             <AlertTitle sx={{ fontWeight: 'bold' }}>Microfone não detectado ou bloqueado!</AlertTitle>
-            Para continuar, você precisa:
+            Para gravar, faça estes passos:
             <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
-              <li>Conectar um microfone ao seu computador/dispositivo.</li>
-              <li>Liberar o acesso ao microfone clicando no ícone de <strong>Cadeado</strong> na barra de endereços do navegador e selecionando "Permitir".</li>
-              <li>Após realizar esses passos, clique no botão ao lado para recarregar a página.</li>
+              <li>Conecte um microfone.</li>
+              <li>No cadeado da barra do navegador, permita o microfone.</li>
+              <li>Depois clique em recarregar.</li>
             </ul>
           </Alert>
         </Box>
@@ -175,7 +176,7 @@ const HomePage: React.FC = () => {
             <>
                 <MicTester onMicStatusChange={setHasMic} />
                 <Typography variant="h5" component="h2" sx={{ mb: 4 }}>
-                Selecione o Dataset
+                Escolha o tipo de sessão
                 </Typography>
                 <Grid container spacing={2} justifyContent="center" sx={{ mb: 4 }}>
                     {DATASETS.map(dataset => (
@@ -203,6 +204,20 @@ const HomePage: React.FC = () => {
                           Música
                         </Button>
                     </Grid>
+                    {isAdmin && (
+                    <Grid item>
+                        <Button
+                          variant="outlined"
+                          color="primary"
+                          size="large"
+                          component={Link}
+                          to="/admin/recordings"
+                          startIcon={<LibraryMusicIcon />}
+                        >
+                          Ver gravações
+                        </Button>
+                    </Grid>
+                    )}
                     {isAdmin && (
                     <Grid item>
                         <Button
@@ -255,7 +270,7 @@ const HomePage: React.FC = () => {
                 Criar música
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                O cadastro será enviado para o endpoint de criação de músicas.
+                Preencha os campos principais. Os áudios são opcionais.
               </Typography>
             </Box>
 

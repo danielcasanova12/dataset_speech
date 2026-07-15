@@ -24,12 +24,12 @@ const modalStyle = { position: 'absolute' as 'absolute', top: '50%', left: '50%'
 
 const getBlockTutorial = (blockId: number, blocks: Block[]) => {
   const block = blocks.find(b => b.blockId === blockId);
-  if (!block) return { title: `Bloco ${blockId}`, description: "Nova seção." };
+  if (!block) return { title: `Bloco ${blockId}`, description: "Nova etapa." };
 
-  if (blockId === 1) return { title: block.name, description: "Bloco de ruído" };
-  if (blockId === 2) return { title: block.name, description: "Nesta seção, leia as frases que aparecem na tela de forma clara e natural, como se estivesse conversando normalmente.", instruction: "Leia naturalmente", audioUrl: "/audios/bloco_02_leitura.wav" };
-  if (blockId === 3) return { title: block.name, description: "Aqui você responderá perguntas de forma espontânea. Leia a pergunta na tela e responda naturalmente, como faria em uma conversa.", instruction: "Responda de forma espontânea e natural", audioUrl: "/audios/bloco_espontaneo.wav" };
-  if (blockId === 104 || blockId === 105) return { title: block.name, description: "Leia ou responda focado em motivação.", instruction: "Motivação" };
+  if (blockId === 1) return { title: block.name, description: "Grave alguns segundos de silêncio." };
+  if (blockId === 2) return { title: block.name, description: "Leia cada frase com voz natural.", instruction: "Leia naturalmente", audioUrl: "/audios/bloco_02_leitura.wav" };
+  if (blockId === 3) return { title: block.name, description: "Leia a pergunta e responda como em uma conversa.", instruction: "Responda naturalmente", audioUrl: "/audios/bloco_espontaneo.wav" };
+  if (blockId === 104 || blockId === 105) return { title: block.name, description: "Leia ou responda com foco em motivação.", instruction: "Motivação" };
   
   let emotionName = block.name.replace("Bloco de Emoção", "").replace("espontânea", "").trim();
   emotionName = emotionName.charAt(0).toUpperCase() + emotionName.slice(1);
@@ -37,14 +37,14 @@ const getBlockTutorial = (blockId: number, blocks: Block[]) => {
   if (block.isSpontaneous) {
     return {
       title: "Bloco de Emoção espontânea",
-      description: `Assista ao vídeo e responda de forma espontânea, expressando a emoção que você sentiu ao vê-lo.`,
+      description: `Assista ao vídeo e responda com a emoção que ele despertou.`,
       instruction: `Espontâneo`,
       audioUrl: "/audios/bloco_espontaneo.wav"
     };
   } else {
     return {
       title: block.name,
-      description: `Leia as frases expressando ${emotionName}.`,
+      description: `Leia expressando ${emotionName}.`,
       instruction: `Expressar Emoção: ${emotionName}`,
       audioUrl: (emotionName.toLowerCase().includes("feliz") || blockId === 5) ? "/audios/bloco_05_feliz.wav" : undefined
     };

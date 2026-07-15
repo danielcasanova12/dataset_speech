@@ -63,32 +63,32 @@ const ConsentScreen: React.FC<ConsentScreenProps> = ({ onAccept, onDecline }) =>
         >
           <Paper elevation={12} sx={{ p: 4, maxWidth: '600px', borderRadius: 4, m: 2 }}>
             <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 'bold', textAlign: 'center' }}>
-              Consentimento para Pesquisa de Voz
+              Antes de começar
             </Typography>
             <Typography variant="body1" color="text.secondary" sx={{ textAlign: 'center', mb: 3 }}>
-              Sua participação é muito importante para o avanço da ciência e tecnologia de voz.
+              Precisamos da sua autorização para gravar sua voz e usar os dados na pesquisa.
             </Typography>
 
             <List dense>
               <ListItem>
                 <ListItemIcon><ScienceIcon color="primary" /></ListItemIcon>
-                <ListItemText primary="Finalidade da Pesquisa" secondary="Sua gravação será usada exclusivamente para fins de pesquisa em síntese de fala, emoções e sotaques." />
+                <ListItemText primary="Uso das gravações" secondary="As gravações serão usadas apenas para pesquisa de voz." />
               </ListItem>
               <ListItem>
                 <ListItemIcon><VerifiedUserIcon color="primary" /></ListItemIcon>
-                <ListItemText primary="Anonimização e LGPD" secondary="Todos os seus dados serão anonimizados e tratados com segurança, conforme a Lei Geral de Proteção de Dados (LGPD)." />
+                <ListItemText primary="Privacidade" secondary="Seus dados serão tratados com segurança e anonimizados quando possível." />
               </ListItem>
               <ListItem>
                 <ListItemIcon><PanToolIcon color="primary" /></ListItemIcon>
-                <ListItemText primary="Participação Voluntária" secondary="A sua participação é totalmente voluntária." />
+                <ListItemText primary="Participação voluntária" secondary="Você decide se quer participar." />
               </ListItem>
               <ListItem>
                 <ListItemIcon><ExitToAppIcon color="primary" /></ListItemIcon>
-                <ListItemText primary="Direito de Sair" secondary="Você pode parar a gravação e desistir da participação a qualquer momento, sem qualquer prejuízo." />
+                <ListItemText primary="Você pode parar" secondary="É possível desistir a qualquer momento." />
               </ListItem>
               <ListItem>
                 <ListItemIcon><DeleteForeverIcon color="primary" /></ListItemIcon>
-                <ListItemText primary="Exclusão dos Dados" secondary="Você tem o direito de solicitar a exclusão dos seus dados de nossa base de pesquisa." />
+                <ListItemText primary="Exclusão dos dados" secondary="Você pode pedir a remoção dos seus dados." />
               </ListItem>
             </List>
 
@@ -105,7 +105,7 @@ const ConsentScreen: React.FC<ConsentScreenProps> = ({ onAccept, onDecline }) =>
             <Box sx={{ mt: 2, p: 2, backgroundColor: 'background.default', borderRadius: 2 }}>
               <FormControlLabel
                 control={<Checkbox checked={isChecked} onChange={(e) => setIsChecked(e.target.checked)} />}
-                label="Você concorda em participar desta gravação para fins de pesquisa, com uso dos dados de forma anonimizada e podendo pedir a exclusão a qualquer momento?"
+                label="Li e concordo em participar da pesquisa de voz."
               />
             </Box>
 
@@ -118,14 +118,14 @@ const ConsentScreen: React.FC<ConsentScreenProps> = ({ onAccept, onDecline }) =>
                   Permitir Microfone Novamente
                 </Button>
                 <Typography variant="caption" color="text.secondary" display="block">
-                  Se o botão acima não funcionar, clique no ícone de cadeado/permissão na barra de endereços do seu navegador e altere a permissão de Microfone para "Permitir".
+                  Se não abrir, clique no cadeado da barra do navegador e permita o microfone.
                 </Typography>
               </Box>
             )}
 
             <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between', gap: 2 }}>
               <Button variant="outlined" color="secondary" onClick={onDecline} sx={{ flex: 1 }}>
-                Não Concordo
+                Sair
               </Button>
               <Button 
                 variant="contained" 
@@ -134,7 +134,7 @@ const ConsentScreen: React.FC<ConsentScreenProps> = ({ onAccept, onDecline }) =>
                 disabled={!isChecked}
                 sx={{ flex: 1 }}
               >
-                Concordo
+                Concordo e continuar
               </Button>
             </Box>
           </Paper>

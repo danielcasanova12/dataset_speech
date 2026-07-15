@@ -440,7 +440,7 @@ const formatPackageRule = (config: MusicSessionPackage): string => {
 const getSetupStageItems = (currentStage: SetupStage) => ([
   { step: '1', title: 'Tamanho', active: currentStage === 'package', done: currentStage !== 'package' },
   { step: '2', title: 'Músicas', active: currentStage === 'music', done: currentStage === 'review' },
-  { step: '3', title: 'Revisar', active: currentStage === 'review', done: false },
+  { step: '3', title: 'Confirmar', active: currentStage === 'review', done: false },
 ]);
 
 const getStepTheme = (step: SessionStep | null) => {
@@ -1467,27 +1467,47 @@ const MusicSessionPage: React.FC = () => {
     });
   }, []);
 
-  const ensureMusicDetails = useCallback(async (musicId: number): Promise<MusicDetails> => {
+  const ensureMusicDetails = useCallback(async (musicId: number, refreshAudio = false): Promise<MusicDetails> => {
     const cached = musicDetailsRef.current[musicId];
-    if (cached) {
+    if (cached && !refreshAudio) {
       preloadMusicAudio(cached);
       return cached;
     }
 
-    const detail = await api.getMusic(musicId);
-    preloadMusicAudio(detail);
+    const detail = cached || await api.getMusic(musicId);
+    const [vocalAudio, instrumentalAudio] = await Promise.all([
+      detail.has_vocal_audio
+        ? api.getMusicAudio(musicId, 'vocal').catch((error) => {
+          console.warn(`Falha ao carregar áudio vocal da música ${musicId}:`, error);
+          return null;
+        })
+        : Promise.resolve(null),
+      detail.has_instrumental_audio
+        ? api.getMusicAudio(musicId, 'instrumental').catch((error) => {
+          console.warn(`Falha ao carregar áudio instrumental da música ${musicId}:`, error);
+          return null;
+        })
+        : Promise.resolve(null),
+    ]);
+    const detailWithAudio: MusicDetails = {
+      ...detail,
+      vocal_audio_url: vocalAudio?.audio_available ? vocalAudio.audio_url : null,
+      instrumental_audio_url: instrumentalAudio?.audio_available ? instrumentalAudio.audio_url : null,
+    };
+
+    preloadMusicAudio(detailWithAudio);
 
     musicDetailsRef.current = {
       ...musicDetailsRef.current,
-      [musicId]: detail,
+      [musicId]: detailWithAudio,
     };
 
     setMusicDetails(previous => ({
       ...previous,
-      [musicId]: detail,
+      [musicId]: detailWithAudio,
     }));
 
-    return detail;
+    return detailWithAudio;
   }, [preloadMusicAudio]);
 
   useEffect(() => {
@@ -2393,7 +2413,7 @@ const MusicSessionPage: React.FC = () => {
 
     setPreviewLoadingIds(previous => (previous.includes(musicId) ? previous : [...previous, musicId]));
     try {
-      await ensureMusicDetails(musicId);
+      await ensureMusicDetails(musicId, true);
       setPreviewVisibleIds(previous => (previous.includes(musicId) ? previous : [...previous, musicId]));
       setSetupError(null);
     } catch (error) {
@@ -2451,14 +2471,6 @@ const MusicSessionPage: React.FC = () => {
         createdMusic,
         ...previous.filter(item => item.id !== createdMusic.id),
       ]);
-      setMusicDetails(previous => ({
-        ...previous,
-        [createdMusic.id]: createdMusic,
-      }));
-      musicDetailsRef.current = {
-        ...musicDetailsRef.current,
-        [createdMusic.id]: createdMusic,
-      };
 
       setSetup(previous => ({
         ...previous,
@@ -2720,7 +2732,7 @@ const MusicSessionPage: React.FC = () => {
     if (!currentStepMusicId) return;
 
     setIsLoadingCurrentMusic(true);
-    void ensureMusicDetails(currentStepMusicId)
+    void ensureMusicDetails(currentStepMusicId, true)
       .then((detail) => {
         if (cancelled) return;
 
@@ -3015,10 +3027,10 @@ const MusicSessionPage: React.FC = () => {
         <Modal open={showExistingSessionModal} onClose={() => undefined}>
           <Box sx={{ ...modalStyle, width: { xs: 'calc(100vw - 32px)', sm: 620 } }}>
             <Typography variant="h5" component="h2" sx={{ fontWeight: 800 }}>
-              Encontramos uma sessão de música em andamento
+              Sessão em andamento
             </Typography>
             <Typography sx={{ mt: 2 }}>
-              Este usuário já tem uma sessão ativa. Escolha se deseja continuar essa sessão ou encerrar a sessão anterior para configurar uma nova.
+              Você já começou uma sessão de música. Continue de onde parou ou encerre a anterior para começar outra.
             </Typography>
 
             {existingSessionInfo && (
@@ -3028,12 +3040,12 @@ const MusicSessionPage: React.FC = () => {
             )}
 
             <Alert severity="warning" sx={{ mt: 2 }}>
-              Se você criar uma nova sessão, a sessão anterior será finalizada. Depois disso, ela não aparecerá mais como sessão ativa para continuar.
+              Ao começar uma nova, a sessão anterior será encerrada e não poderá ser retomada.
             </Alert>
 
             {existingSessionModalMode === 'entry' && (
               <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                Ao continuar, você volta para a tela de gravação no ponto salvo da sessão ativa.
+                Continuar leva direto para a gravação no ponto salvo.
               </Typography>
             )}
 
@@ -3042,10 +3054,10 @@ const MusicSessionPage: React.FC = () => {
                 Continuar sessão ativa
               </Button>
               <Button variant="outlined" color="warning" onClick={handleFinalizeCurrentAndStartNew} disabled={isProcessing}>
-                Encerrar anterior e criar nova
+                Encerrar e começar nova
               </Button>
               <Button variant="outlined" color="error" onClick={() => navigate('/')} disabled={isProcessing} sx={{ gridColumn: { xs: 'auto', sm: '1 / -1' } }}>
-                Voltar para a Home sem alterar nada
+                Voltar sem alterar
               </Button>
             </Box>
           </Box>
@@ -3068,7 +3080,7 @@ const MusicSessionPage: React.FC = () => {
               Sessão de Música
             </Typography>
             <Typography variant="body1" color="text.secondary">
-              Primeiro escolha o tamanho da sessão. Depois selecione as músicas e inicie a gravação.
+              Escolha o tamanho, selecione as músicas e revise antes de gravar.
             </Typography>
           </Box>
 
@@ -3111,7 +3123,7 @@ const MusicSessionPage: React.FC = () => {
                 <>
                   <Box>
                     <Typography variant="h6" sx={{ mb: 2 }}>
-                      1. Escolha o tamanho da sessão
+                      1. Tamanho da sessão
                     </Typography>
                     <Box
                       sx={{
@@ -3156,11 +3168,6 @@ const MusicSessionPage: React.FC = () => {
                       })}
                     </Box>
 
-                    {setupError && (
-                      <Alert severity="error" sx={{ mt: 2 }}>
-                        {setupError}
-                      </Alert>
-                    )}
                   </Box>
 
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
@@ -3202,16 +3209,10 @@ const MusicSessionPage: React.FC = () => {
                         </Box>
                         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
                           {isAdmin
-                            ? 'Como administrador, você pode cadastrar músicas sem sair desta tela.'
-                            : 'Selecione as músicas disponíveis para montar sua sessão.'}
+                            ? 'Você pode cadastrar músicas nesta tela.'
+                            : 'Escolha as músicas da sessão.'}
                         </Typography>
                       </Box>
-
-                      {setupError && (
-                        <Alert severity="error">
-                          {setupError}
-                        </Alert>
-                      )}
 
                       {isAdmin && showMusicAdminPanel && (
                         <Paper
@@ -3231,15 +3232,9 @@ const MusicSessionPage: React.FC = () => {
                                 Cadastrar nova música
                               </Typography>
                               <Typography variant="body2" color="text.secondary">
-                                Preencha os dados principais e envie os arquivos de áudio quando estiverem disponíveis.
+                                Nome e gênero são obrigatórios. Áudios são opcionais.
                               </Typography>
                             </Box>
-
-                            {musicAdminStatus && (
-                              <Alert severity={musicAdminStatus.type}>
-                                {musicAdminStatus.message}
-                              </Alert>
-                            )}
 
                             <Box
                               sx={{
@@ -3440,7 +3435,7 @@ const MusicSessionPage: React.FC = () => {
                             Ordem escolhida
                           </Typography>
                           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                            Defina aqui a sequência em que você quer cantar.
+                          Esta será a ordem da gravação.
                           </Typography>
 
                           {selectedMusicSummaries.length === 0 ? (
@@ -3489,11 +3484,11 @@ const MusicSessionPage: React.FC = () => {
 
                           {musics.length === 0 ? (
                             <Alert severity="warning">
-                              Nenhuma música foi retornada pela API no momento.
+                              Nenhuma música disponível agora.
                             </Alert>
                           ) : filteredMusics.length === 0 ? (
                             <Alert severity="info">
-                              Nenhuma música encontrada com esse filtro.
+                              Nenhuma música encontrada.
                             </Alert>
                           ) : (
                             <Stack spacing={1.25} sx={{ maxHeight: 620, overflowY: 'auto', pr: 0.5 }}>
@@ -3545,7 +3540,7 @@ const MusicSessionPage: React.FC = () => {
                                         {isPreviewLoading
                                           ? 'Carregando...'
                                           : isPreviewVisible
-                                            ? 'Ocultar prévia'
+                                            ? 'Fechar prévia'
                                             : 'Prévia'}
                                       </Button>
                                     </Box>
@@ -3596,7 +3591,7 @@ const MusicSessionPage: React.FC = () => {
                       Voltar
                     </Button>
                     <Button variant="contained" onClick={handleAdvanceToReviewStage} disabled={musics.length === 0}>
-                      Revisar seleção
+                      Conferir seleção
                     </Button>
                   </Box>
                 </>
@@ -3606,18 +3601,12 @@ const MusicSessionPage: React.FC = () => {
                     <Stack spacing={2}>
                       <Box>
                         <Typography variant="h6">
-                          3. Revisar seleção
+                          3. Confirmar seleção
                         </Typography>
                         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
                           Confira a quantidade e a ordem das músicas antes de começar.
                         </Typography>
                       </Box>
-
-                      {setupError && (
-                        <Alert severity="error">
-                          {setupError}
-                        </Alert>
-                      )}
 
                       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2.5, bgcolor: 'background.default' }}>
                         <Typography variant="body2" color="text.secondary">
@@ -3798,12 +3787,6 @@ const MusicSessionPage: React.FC = () => {
             </Box>
           </Box>
         </Box>
-
-        {(runtimeError || stepAudioError) && (
-          <Alert severity="error" sx={{ mb: 3 }}>
-            {runtimeError || stepAudioError}
-          </Alert>
-        )}
 
         {currentStep && (
           <>
@@ -4103,7 +4086,7 @@ const MusicSessionPage: React.FC = () => {
                           }}
                         >
                           <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'success.dark', mb: 1.25 }}>
-                            Como esta etapa funciona
+                            Antes de gravar
                           </Typography>
                           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, gap: 1.25 }}>
                             {[
@@ -4154,7 +4137,7 @@ const MusicSessionPage: React.FC = () => {
                               1. O que você quer ouvir
                             </Typography>
                             <Typography variant="body2" color="text.secondary" sx={{ mb: 2.25 }}>
-                              Esse áudio é só para te orientar enquanto canta. Ele não entra no arquivo final.
+                              Escolha o áudio que quer ouvir no fone. Ele não entra na gravação final.
                             </Typography>
 
                             <Stack spacing={2}>
@@ -4222,7 +4205,7 @@ const MusicSessionPage: React.FC = () => {
                               2. Metrônomo opcional
                             </Typography>
                             <Typography variant="body2" color="text.secondary" sx={{ mb: 2.25 }}>
-                              Essas opções valem só para esta gravação e podem ser ajustadas livremente.
+                              Use apenas se precisar de marcação de tempo.
                             </Typography>
 
                             <Stack spacing={2}>
@@ -4261,7 +4244,7 @@ const MusicSessionPage: React.FC = () => {
                                     const value = event.target.value;
                                     setMetronomeConfig(previous => ({ ...previous, bpm: value }));
                                   }}
-                                  helperText="Carregado da música, mas editável só nesta gravação."
+                                  helperText="Você pode ajustar para esta gravação."
                                   fullWidth
                                 />
 
@@ -4269,7 +4252,7 @@ const MusicSessionPage: React.FC = () => {
                                   label="Compasso"
                                   value={metronomeConfig.timeSignature}
                                   disabled
-                                  helperText="Carregado automaticamente da música."
+                                  helperText="Definido pela música."
                                   fullWidth
                                 />
                               </Box>
@@ -4314,7 +4297,7 @@ const MusicSessionPage: React.FC = () => {
                               </Paper>
 
                               <Alert severity="warning" sx={{ borderRadius: 2.5 }}>
-                                Para evitar que o metrônomo apareça na gravação, use fones de ouvido.
+                                Use fones para o metrônomo não vazar na gravação.
                               </Alert>
                             </Stack>
                           </Paper>

@@ -101,10 +101,10 @@ const RoomToneScreen: React.FC<RoomToneScreenProps> = ({ onRecordingComplete }) 
     >
       <Paper elevation={12} sx={{ p: 4, maxWidth: '600px', borderRadius: 4, m: 2, textAlign: 'center' }}>
         <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 'bold' }}>
-          Gravação de Som Ambiente
+          Som do ambiente
         </Typography>
         <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-          Agora, vamos gravar 5 segundos de silêncio para capturar o som do seu ambiente. Por favor, não fale.
+          Vamos gravar 5 segundos de silêncio. Fique quieto até terminar.
         </Typography>
 
         {step === 'initial' && (
@@ -117,7 +117,7 @@ const RoomToneScreen: React.FC<RoomToneScreenProps> = ({ onRecordingComplete }) 
           <Box>
             <Typography variant="h2" component="p" sx={{ my: 2 }}>{countdown}</Typography>
             <CircularProgress />
-            <Typography variant="h6" sx={{ mt: 2 }}>Gravando... Fique em silêncio.</Typography>
+            <Typography variant="h6" sx={{ mt: 2 }}>Gravando silêncio...</Typography>
           </Box>
         )}
       </Paper>
