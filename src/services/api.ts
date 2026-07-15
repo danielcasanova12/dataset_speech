@@ -194,7 +194,7 @@ export interface LocalRecordingStartPayload {
   bloco_id: number;
   created_at: string;
   audio_id: string;
-  step_type: 'music';
+  step_type: 'music' | 'spoken';
   frase_content?: string;
   text_prompt?: string;
   background_audio_url?: string;

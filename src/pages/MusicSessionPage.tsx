@@ -19,8 +19,6 @@ import {
   Slider,
   Stack,
   Switch,
-  Tab,
-  Tabs,
   TextField,
   Typography,
 } from '@mui/material';
@@ -47,7 +45,6 @@ type MusicButtonTutorialKey = 'phrase-controls' | 'listen-controls' | 'record-co
 type CountInOption = 0 | 1 | 2;
 type MusicSortOption = 'selected' | 'name' | 'genre' | 'recent';
 type FloatingAlertSeverity = 'success' | 'info' | 'warning' | 'error';
-type RecordSetupTab = 'microphone' | 'monitor' | 'rhythm';
 
 interface MusicSessionPackage {
   key: SessionPackageKey;
@@ -270,58 +267,6 @@ const createInitialMusicAdminForm = (): MusicAdminFormState => ({
   vocalAudioFile: null,
   instrumentalAudioFile: null,
 });
-
-const audioBufferToWav = (buffer: AudioBuffer): Blob => {
-  const numOfChan = buffer.numberOfChannels;
-  const length = buffer.length * numOfChan * 2 + 44;
-  const bufferOut = new ArrayBuffer(length);
-  const view = new DataView(bufferOut);
-  const channels: Float32Array[] = [];
-  let pos = 0;
-  let offset = 0;
-
-  const setUint16 = (data: number) => {
-    view.setUint16(pos, data, true);
-    pos += 2;
-  };
-
-  const setUint32 = (data: number) => {
-    view.setUint32(pos, data, true);
-    pos += 4;
-  };
-
-  setUint32(0x46464952);
-  setUint32(length - 8);
-  setUint32(0x45564157);
-
-  setUint32(0x20746d66);
-  setUint32(16);
-  setUint16(1);
-  setUint16(numOfChan);
-  setUint32(buffer.sampleRate);
-  setUint32(buffer.sampleRate * 2 * numOfChan);
-  setUint16(numOfChan * 2);
-  setUint16(16);
-
-  setUint32(0x61746164);
-  setUint32(length - pos - 4);
-
-  for (let index = 0; index < buffer.numberOfChannels; index += 1) {
-    channels.push(buffer.getChannelData(index));
-  }
-
-  while (pos < length) {
-    for (let index = 0; index < numOfChan; index += 1) {
-      let sample = Math.max(-1, Math.min(1, channels[index][offset]));
-      sample = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
-      view.setInt16(pos, sample, true);
-      pos += 2;
-    }
-    offset += 1;
-  }
-
-  return new Blob([bufferOut], { type: 'audio/wav' });
-};
 
 const parseCsvLine = (line: string): string[] => {
   const matches = line.match(/(?<=,|^)(?:"[^"]*"|[^,]*)/g) || [];
@@ -722,10 +667,10 @@ const MusicSessionPage: React.FC = () => {
   const [showFinishModal, setShowFinishModal] = useState(false);
   const [showStepTutorialModal, setShowStepTutorialModal] = useState(false);
   const [stepTutorialContent, setStepTutorialContent] = useState<MusicStepTutorial | null>(null);
-  const [, setStepTutorialVersion] = useState(0);
+  const [stepTutorialVersion, setStepTutorialVersion] = useState(0);
   const [activeButtonTutorialKey, setActiveButtonTutorialKey] = useState<MusicButtonTutorialKey | null>(null);
   const [buttonTutorialStep, setButtonTutorialStep] = useState<number | null>(null);
-  const [, setButtonTutorialVersion] = useState(0);
+  const [buttonTutorialVersion, setButtonTutorialVersion] = useState(0);
   const [buttonTooltipConfig, setButtonTooltipConfig] = useState<{
     open: boolean;
     text: string;
@@ -737,7 +682,6 @@ const MusicSessionPage: React.FC = () => {
   const [previewVisibleIds, setPreviewVisibleIds] = useState<number[]>([]);
   const [previewLoadingIds, setPreviewLoadingIds] = useState<number[]>([]);
   const [monitorMode, setMonitorMode] = useState<MonitorMode>('none');
-  const [recordSetupTab, setRecordSetupTab] = useState<RecordSetupTab>('microphone');
   const [metronomeConfig, setMetronomeConfig] = useState<MetronomeConfig>(() => createInitialMetronomeConfig(null));
   const [voiceMonitoring, setVoiceMonitoring] = useState(false);
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
@@ -749,15 +693,15 @@ const MusicSessionPage: React.FC = () => {
   const [hasStartedCurrentTake, setHasStartedCurrentTake] = useState(false);
   const [hasTriggeredListenPlayback, setHasTriggeredListenPlayback] = useState(false);
   const [timer, setTimer] = useState(0);
-  const [dbfs, setDbfs] = useState(-100);
   const [phraseFontSize, setPhraseFontSize] = useState(34);
   const [isHighContrast, setIsHighContrast] = useState(false);
   const [isDyslexicFont, setIsDyslexicFont] = useState(false);
   const [skipCount, setSkipCount] = useState(0);
-  const [micPreviewReady, setMicPreviewReady] = useState(false);
   const [micPreviewLoading, setMicPreviewLoading] = useState(false);
   const [isMicTestRecording, setIsMicTestRecording] = useState(false);
+  const [micTestSecondsRemaining, setMicTestSecondsRemaining] = useState<number | null>(null);
   const [localRecordingReady, setLocalRecordingReady] = useState(false);
+  const [hasConfirmedLocalMicrophone, setHasConfirmedLocalMicrophone] = useState(false);
   const [localMicrophones, setLocalMicrophones] = useState<LocalMicrophone[]>([]);
   const [selectedLocalMicrophoneId, setSelectedLocalMicrophoneId] = useState('');
   const [micTestAudioUrl, setMicTestAudioUrl] = useState<string | null>(null);
@@ -767,13 +711,9 @@ const MusicSessionPage: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const preloadedAudioUrlsRef = useRef<Set<string>>(new Set());
   const preloadedAudioElementsRef = useRef<HTMLAudioElement[]>([]);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const micTestCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const localAudioStreamSocketRef = useRef<WebSocket | null>(null);
   const isLocalRecordingActiveRef = useRef(false);
@@ -1104,7 +1044,6 @@ const MusicSessionPage: React.FC = () => {
 
     setIsRecording(false);
     setIsMicPaused(false);
-    setDbfs(-100);
     setStepCountdown(null);
     setCountdownLabel(null);
   }, []);
@@ -1113,15 +1052,6 @@ const MusicSessionPage: React.FC = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
-    }
-
-    if (sourceRef.current) {
-      try {
-        sourceRef.current.disconnect();
-      } catch (error) {
-        void error;
-      }
-      sourceRef.current = null;
     }
 
     if (voiceMonitorAudioRef.current) {
@@ -1258,57 +1188,6 @@ const MusicSessionPage: React.FC = () => {
     }
   }, [loadAudioSource, startMusicProgressTracking]);
 
-  const drawMicWave = useCallback(() => {
-    const analyser = analyserRef.current;
-    const canvas = canvasRef.current;
-    if (!analyser || !canvas) return;
-
-    const canvasContext = canvas.getContext('2d');
-    if (!canvasContext) return;
-
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-
-    const draw = () => {
-      analyser.getByteTimeDomainData(dataArray);
-
-      let sumSquares = 0;
-      for (let index = 0; index < dataArray.length; index += 1) {
-        const amplitude = (dataArray[index] / 128) - 1;
-        sumSquares += amplitude * amplitude;
-      }
-
-      const rms = Math.sqrt(sumSquares / dataArray.length);
-      const db = 20 * Math.log10(rms);
-      setDbfs(Number.isFinite(db) ? db : -100);
-
-      canvasContext.fillStyle = '#101217';
-      canvasContext.fillRect(0, 0, canvas.width, canvas.height);
-      canvasContext.lineWidth = 2;
-      canvasContext.strokeStyle = '#5ed1ff';
-      canvasContext.beginPath();
-
-      const sliceWidth = canvas.width / bufferLength;
-      let x = 0;
-      for (let index = 0; index < bufferLength; index += 1) {
-        const v = dataArray[index] / 128;
-        const y = (v * canvas.height) / 2;
-        if (index === 0) {
-          canvasContext.moveTo(x, y);
-        } else {
-          canvasContext.lineTo(x, y);
-        }
-        x += sliceWidth;
-      }
-
-      canvasContext.lineTo(canvas.width, canvas.height / 2);
-      canvasContext.stroke();
-      animationFrameRef.current = requestAnimationFrame(draw);
-    };
-
-    draw();
-  }, []);
-
   const drawRecordedMicTestWave = useCallback(async (audioBlob: Blob) => {
     const canvas = micTestCanvasRef.current;
     if (!canvas) return;
@@ -1388,13 +1267,11 @@ const MusicSessionPage: React.FC = () => {
       const fallbackMicrophone = microphones.find(microphone => microphone.is_default || microphone.selected) || microphones[0];
 
       setSelectedLocalMicrophoneId(hasSaved ? savedMicrophoneId : hasSelected ? selectedId : getLocalMicrophoneId(fallbackMicrophone));
-      setMicPreviewReady(false);
       setRuntimeError(null);
     } catch (error) {
       console.error('Não foi possível preparar a API local de gravação:', error);
       setLocalMicrophones([]);
       setSelectedLocalMicrophoneId('');
-      setMicPreviewReady(false);
       setLocalRecordingReady(false);
       setRuntimeError(error instanceof Error ? error.message : 'Não foi possível preparar a API local de gravação.');
     } finally {
@@ -1429,14 +1306,13 @@ const MusicSessionPage: React.FC = () => {
       return;
     }
 
-    if (!session || currentStepRef.current?.type !== 'record') {
+    if (!session) {
       setRuntimeError('A sessão de música ainda não está pronta para testar o microfone.');
       return;
     }
 
     setMicPreviewLoading(true);
     setLocalRecordingReady(false);
-    setMicPreviewReady(false);
     clearMicTestAudio();
     closeLocalAudioStream();
 
@@ -1445,7 +1321,7 @@ const MusicSessionPage: React.FC = () => {
       localStorage.setItem(LOCAL_RECORDING_MIC_STORAGE_KEY, selectedLocalMicrophoneId);
 
       const step = currentStepRef.current;
-      const promptText = `Teste de microfone para ${step.musicName || 'música'}`.trim();
+      const promptText = `Teste de microfone da sessão${step?.type === 'record' ? `: ${step.musicName}` : ''}`.trim();
       const localUserId = getLocalRecordingUserId(session);
       const testRecordingId = createLocalRecordingId();
 
@@ -1454,16 +1330,20 @@ const MusicSessionPage: React.FC = () => {
         session_id: session.id,
         id_recordings: testRecordingId,
         dataset_id: session.dataset_id,
-        bloco_id: step.blockId,
+        bloco_id: step?.blockId ?? 0,
         created_at: new Date().toISOString(),
-        audio_id: `${step.id}-mic-test`,
+        audio_id: `${step?.id ?? 'session'}-mic-test`,
         step_type: 'music',
         frase_content: promptText,
         text_prompt: promptText,
       });
 
       setIsMicTestRecording(true);
-      await new Promise(resolve => window.setTimeout(resolve, 3000));
+      setMicTestSecondsRemaining(5);
+      for (let remaining = 5; remaining > 0; remaining -= 1) {
+        await new Promise(resolve => window.setTimeout(resolve, 1000));
+        setMicTestSecondsRemaining(remaining - 1);
+      }
       setIsMicTestRecording(false);
       const stopPayload = localRecordingStopPayloadRef.current;
       if (!stopPayload) {
@@ -1483,48 +1363,23 @@ const MusicSessionPage: React.FC = () => {
       isLocalRecordingActiveRef.current = false;
       localRecordingStopPayloadRef.current = null;
       setLocalRecordingReady(false);
-      setMicPreviewReady(false);
       setRuntimeError(error instanceof Error ? error.message : 'Não foi possível gravar a amostra de teste do microfone.');
     } finally {
       setIsMicTestRecording(false);
+      setMicTestSecondsRemaining(null);
       setMicPreviewLoading(false);
     }
   }, [clearMicTestAudio, closeLocalAudioStream, drawRecordedMicTestWave, selectedLocalMicrophoneId, session, startLocalRecordingWithRecovery]);
 
   const ensureMicrophoneReady = useCallback(async () => {
     if (!streamRef.current || !streamRef.current.active) {
-      const savedMicId = localStorage.getItem('selectedMicId');
       const audioConstraints = {
-        ...(savedMicId ? { deviceId: { exact: savedMicId } } : {}),
         echoCancellation: false,
         noiseSuppression: false,
         autoGainControl: false,
       };
 
       streamRef.current = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
-    }
-
-    const AudioContextConstructor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioContextConstructor) {
-      throw new Error('AudioContext não suportado neste navegador.');
-    }
-
-    if (!audioContextRef.current) {
-      audioContextRef.current = new AudioContextConstructor();
-    }
-
-    if (audioContextRef.current.state === 'suspended') {
-      await audioContextRef.current.resume();
-    }
-
-    if (!analyserRef.current) {
-      analyserRef.current = audioContextRef.current.createAnalyser();
-      analyserRef.current.fftSize = 2048;
-    }
-
-    if (!sourceRef.current && streamRef.current) {
-      sourceRef.current = audioContextRef.current.createMediaStreamSource(streamRef.current);
-      sourceRef.current.connect(analyserRef.current);
     }
   }, []);
 
@@ -1649,7 +1504,9 @@ const MusicSessionPage: React.FC = () => {
 
   const startRecording = useCallback(async () => {
     try {
-      if (currentStepRef.current?.type === 'record') {
+      const step = currentStepRef.current;
+
+      if (step && step.type !== 'listen') {
         if (!session) {
           throw new Error('Sessão indisponível para gravação local.');
         }
@@ -1665,11 +1522,12 @@ const MusicSessionPage: React.FC = () => {
         clearPendingReview();
 
         if (!localRecordingReadyRef.current) {
-          throw new Error('Escolha e teste um microfone antes de começar a gravação da música.');
+          throw new Error('Escolha e teste um microfone antes de começar a gravação.');
         }
 
-        const step = currentStepRef.current;
-        const promptText = `Gravação da música ${step.musicName || ''}`.trim();
+        const promptText = step.type === 'record'
+          ? `Gravação da música ${step.musicName || ''}`.trim()
+          : step.prompt;
 
         await startLocalRecordingWithRecovery({
           user_id: getLocalRecordingUserId(session),
@@ -1679,10 +1537,10 @@ const MusicSessionPage: React.FC = () => {
           bloco_id: step.blockId,
           created_at: new Date().toISOString(),
           audio_id: step.id,
-          step_type: 'music',
+          step_type: step.type === 'record' ? 'music' : 'spoken',
           frase_content: promptText,
           text_prompt: promptText,
-          background_audio_url: selectedMonitorUrl || undefined,
+          background_audio_url: step.type === 'record' ? selectedMonitorUrl || undefined : undefined,
         });
 
         setHasStartedCurrentTake(true);
@@ -1690,102 +1548,23 @@ const MusicSessionPage: React.FC = () => {
         setIsMicPaused(false);
         setTimer(0);
         setRuntimeError(null);
-
-        try {
-          await ensureMicrophoneReady();
-          window.requestAnimationFrame(() => {
-            drawMicWave();
-          });
-        } catch (error) {
-          console.warn('Não foi possível abrir o microfone no navegador para desenhar a onda real:', error);
-          setDbfs(-100);
-          const canvas = canvasRef.current;
-          const context = canvas?.getContext('2d');
-          if (canvas && context) {
-            context.fillStyle = '#101217';
-            context.fillRect(0, 0, canvas.width, canvas.height);
-          }
-        }
-
         if (canUseVoiceMonitoring && voiceMonitoring) {
           await syncVoiceMonitorAudio(true);
         }
 
         return;
       }
-
-      if (mediaRecorderRef.current) {
-        await finalizeRecording(true);
-      }
-
-      clearPendingReview();
-      await ensureMicrophoneReady();
-      if (!streamRef.current) {
-        throw new Error('Microfone indisponível.');
-      }
-
-      const recorder = new MediaRecorder(streamRef.current);
-      mediaRecorderRef.current = recorder;
-      audioChunksRef.current = [];
-
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      recorder.onpause = () => setIsMicPaused(true);
-      recorder.onresume = () => setIsMicPaused(false);
-      recorder.start();
-
-      setHasStartedCurrentTake(true);
-      setIsRecording(true);
-      setIsMicPaused(false);
-      setTimer(0);
-      setRuntimeError(null);
-      window.requestAnimationFrame(() => {
-        drawMicWave();
-      });
-
-      if (canUseVoiceMonitoring && voiceMonitoring) {
-        await syncVoiceMonitorAudio(true);
-      }
     } catch (error) {
       console.error('Não foi possível iniciar a gravação:', error);
-      setRuntimeError('Não foi possível acessar o microfone. Verifique as permissões do navegador.');
+      setRuntimeError(error instanceof Error ? error.message : 'Não foi possível iniciar a gravação local.');
       cleanupStream();
       cleanupLiveIndicators();
     }
-  }, [canUseVoiceMonitoring, cleanupLiveIndicators, cleanupStream, clearPendingReview, drawMicWave, ensureMicrophoneReady, finalizeLocalRecording, finalizeRecording, selectedMonitorUrl, session, startLocalRecordingWithRecovery, syncVoiceMonitorAudio, voiceMonitoring]);
+  }, [canUseVoiceMonitoring, cleanupLiveIndicators, cleanupStream, clearPendingReview, finalizeLocalRecording, finalizeRecording, selectedMonitorUrl, session, startLocalRecordingWithRecovery, syncVoiceMonitorAudio, voiceMonitoring]);
 
   useEffect(() => {
     startRecordingRef.current = startRecording;
   }, [startRecording]);
-
-  const getAudioDataAndMetadata = useCallback((audioBlob: Blob): Promise<{ duration: number; sampleRate: number; buffer: AudioBuffer }> => {
-    return new Promise((resolve, reject) => {
-      const AudioContextConstructor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!AudioContextConstructor) {
-        reject(new Error('AudioContext não suportado neste navegador.'));
-        return;
-      }
-
-      const audioContext = new AudioContextConstructor();
-      const fileReader = new FileReader();
-
-      fileReader.onloadend = () => {
-        const arrayBuffer = fileReader.result as ArrayBuffer;
-        audioContext.decodeAudioData(
-          arrayBuffer,
-          (buffer) => resolve({ duration: buffer.duration, sampleRate: buffer.sampleRate, buffer }),
-          reject,
-        );
-      };
-
-      fileReader.onerror = reject;
-      fileReader.readAsArrayBuffer(audioBlob);
-    });
-  }, []);
 
   const ensureMusicDetails = useCallback(async (musicId: number, refreshAudio = false): Promise<MusicDetails> => {
     const cached = musicDetailsRef.current[musicId];
@@ -2061,34 +1840,11 @@ const MusicSessionPage: React.FC = () => {
 
   const uploadStepRecording = useCallback(async (step: PhraseStep | RecordStep, audioBlob: Blob) => {
     if (!session) return;
+    void step;
+    void audioBlob;
 
-    if (step.type === 'record') {
-      await api.uploadLatestLocalRecording(getLocalRecordingUserId(session));
-      return;
-    }
-
-    const { duration, sampleRate, buffer } = await getAudioDataAndMetadata(audioBlob);
-    const wavBlob = audioBufferToWav(buffer);
-    const promptText = step.prompt;
-
-    await api.uploadRecording(
-      session.id,
-      session.dataset_id,
-      step.blockId,
-      wavBlob,
-      duration,
-      'wav',
-      sampleRate,
-      false,
-      undefined,
-      promptText,
-      undefined,
-      step.id,
-      'spoken',
-      undefined,
-      promptText,
-    );
-  }, [getAudioDataAndMetadata, session]);
+    await api.uploadLatestLocalRecording(getLocalRecordingUserId(session));
+  }, [session]);
 
   const handleSaveCurrentStep = useCallback(async () => {
     if (!currentStep) return;
@@ -2126,9 +1882,7 @@ const MusicSessionPage: React.FC = () => {
     setRuntimeError(null);
 
     try {
-      const audioBlob = currentStep.type === 'record'
-        ? await finalizeLocalRecording()
-        : await finalizeRecording(true);
+      const audioBlob = await finalizeLocalRecording();
       stopMusicPlayback(true);
       stopMetronome();
 
@@ -2153,7 +1907,7 @@ const MusicSessionPage: React.FC = () => {
     } finally {
       setIsProcessing(false);
     }
-  }, [advanceToNextStep, clearPendingReview, currentStep, finalizeLocalRecording, finalizeRecording, hasStartedCurrentTake, pendingReviewBlob, resetTakeState, stopMetronome, stopMusicPlayback, uploadStepRecording]);
+  }, [advanceToNextStep, clearPendingReview, currentStep, finalizeLocalRecording, hasStartedCurrentTake, pendingReviewBlob, resetTakeState, stopMetronome, stopMusicPlayback, uploadStepRecording]);
 
   const resolveMetronomeConfig = useCallback(() => {
     if (!metronomeConfig.enabled) {
@@ -2279,8 +2033,6 @@ const MusicSessionPage: React.FC = () => {
         return;
       }
 
-      const recorder = mediaRecorderRef.current;
-
       if (!hasStartedCurrentTake) {
         if (pendingReviewBlob) {
           clearPendingReview();
@@ -2288,52 +2040,15 @@ const MusicSessionPage: React.FC = () => {
         queueCurrentRecordTake(true);
         return;
       }
-
-      if (recorder?.state === 'paused') {
-        if (selectedMonitorUrl) {
-          await playAudioUrl(selectedMonitorUrl, false);
-        }
-
-        const metronomeSession = resolveMetronomeConfig();
-        if (metronomeSession) {
-          await startMetronomeLoop(
-            metronomeSession.bpm,
-            metronomeSession.timeSignature,
-            metronomeSession.volume,
-          );
-        }
-
-        recorder.resume();
-        setIsMicPaused(false);
-        return;
-      }
-
-      if (recorder?.state === 'recording') {
-        stopMusicPlayback(false);
-        stopMetronome();
-        recorder.pause();
-        setIsMicPaused(true);
-      }
       return;
     }
-
-    const recorder = mediaRecorderRef.current;
 
     if (!hasStartedCurrentTake) {
       await startRecording();
       return;
     }
 
-    if (recorder?.state === 'paused') {
-      recorder.resume();
-      setIsMicPaused(false);
-      return;
-    }
-
-    if (recorder?.state === 'recording') {
-      recorder.pause();
-      setIsMicPaused(true);
-    }
+    await handleSaveCurrentStep();
   }, [
     clearPendingReview,
     currentListenEnded,
@@ -2343,17 +2058,12 @@ const MusicSessionPage: React.FC = () => {
     hasTriggeredListenPlayback,
     handleSaveCurrentStep,
     isMusicPlaying,
-    mediaRecorderRef,
     musicProgress,
     pendingReviewBlob,
     playAudioUrl,
     queueCurrentRecordTake,
     queueListenPlayback,
-    resolveMetronomeConfig,
-    selectedMonitorUrl,
-    startMetronomeLoop,
     startRecording,
-    stopMetronome,
     stopMusicPlayback,
   ]);
 
@@ -2370,11 +2080,7 @@ const MusicSessionPage: React.FC = () => {
       return;
     }
 
-    if (currentStep.type === 'record') {
-      await stopLocalRecordingIfActive();
-    } else {
-      await finalizeRecording(true);
-    }
+    await stopLocalRecordingIfActive();
     resetTakeState();
     stopMusicPlayback(true);
     stopMetronome();
@@ -2386,7 +2092,7 @@ const MusicSessionPage: React.FC = () => {
     window.setTimeout(() => {
       void startRecording();
     }, 150);
-  }, [clearPendingReview, currentStep, finalizeRecording, queueListenPlayback, resetTakeState, startRecording, stopLocalRecordingIfActive, stopMetronome, stopMusicPlayback]);
+  }, [clearPendingReview, currentStep, queueListenPlayback, resetTakeState, startRecording, stopLocalRecordingIfActive, stopMetronome, stopMusicPlayback]);
 
   const handleRetakeReviewedMusic = useCallback(async () => {
     setRuntimeError(null);
@@ -2398,7 +2104,6 @@ const MusicSessionPage: React.FC = () => {
     stopMetronome();
     localRecordingReadyRef.current = true;
     setLocalRecordingReady(true);
-    setRecordSetupTab('rhythm');
     window.setTimeout(() => {
       queueCurrentRecordTake(true);
     }, 150);
@@ -2442,10 +2147,8 @@ const MusicSessionPage: React.FC = () => {
     clearPendingReview();
     stopMusicPlayback(true);
     stopMetronome();
-    if (currentStep.type === 'record') {
+    if (currentStep.type !== 'listen') {
       await stopLocalRecordingIfActive();
-    } else {
-      await finalizeRecording(true);
     }
     resetTakeState();
 
@@ -2463,7 +2166,7 @@ const MusicSessionPage: React.FC = () => {
     }
 
     await advanceToNextStep();
-  }, [advanceToNextStep, clearPendingReview, currentStep, finalizeRecording, replaceCurrentPhrase, resetTakeState, skipCount, stopLocalRecordingIfActive, stopMetronome, stopMusicPlayback]);
+  }, [advanceToNextStep, clearPendingReview, currentStep, replaceCurrentPhrase, resetTakeState, skipCount, stopLocalRecordingIfActive, stopMetronome, stopMusicPlayback]);
 
   const handleGoBack = useCallback(async () => {
     if (currentStepIndex === 0) return;
@@ -2473,14 +2176,12 @@ const MusicSessionPage: React.FC = () => {
     clearPendingReview();
     stopMusicPlayback(true);
     stopMetronome();
-    if (currentStepRef.current?.type === 'record') {
+    if (currentStepRef.current?.type !== 'listen') {
       await stopLocalRecordingIfActive();
-    } else {
-      await finalizeRecording(true);
     }
     resetTakeState();
     setCurrentStepIndex(previous => Math.max(0, previous - 1));
-  }, [clearPendingReview, currentStepIndex, finalizeRecording, resetTakeState, stopLocalRecordingIfActive, stopMetronome, stopMusicPlayback]);
+  }, [clearPendingReview, currentStepIndex, resetTakeState, stopLocalRecordingIfActive, stopMetronome, stopMusicPlayback]);
 
   const ensureLocalRecordingApiOnline = useCallback(async () => {
     try {
@@ -2907,28 +2608,19 @@ const MusicSessionPage: React.FC = () => {
 
   useEffect(() => {
     clearPendingReview();
-    clearMicTestAudio();
-    setRecordSetupTab('microphone');
-  }, [clearMicTestAudio, clearPendingReview, currentStepId]);
+  }, [clearPendingReview, currentStepId]);
 
   useEffect(() => {
     setSkipCount(0);
   }, [currentStepId]);
 
   useEffect(() => {
-    if (currentStep?.type !== 'record') {
-      setMicPreviewReady(false);
-      setLocalRecordingReady(false);
-      closeLocalAudioStream();
-      return;
-    }
-
-    if (!showRecordSetup || stepCountdown !== null) {
+    if (!isSessionStarted || hasConfirmedLocalMicrophone || micPreviewLoading || localMicrophones.length > 0) {
       return;
     }
 
     void prepareLocalRecordingMicrophone();
-  }, [closeLocalAudioStream, currentStep?.type, prepareLocalRecordingMicrophone, showRecordSetup, stepCountdown]);
+  }, [hasConfirmedLocalMicrophone, isSessionStarted, localMicrophones.length, micPreviewLoading, prepareLocalRecordingMicrophone]);
 
   useEffect(() => {
     if (buttonTutorialStep === null || !activeButtonTutorialKey) return;
@@ -3057,6 +2749,12 @@ const MusicSessionPage: React.FC = () => {
     setStepAudioError(null);
     setHasTriggeredListenPlayback(false);
 
+    if (!hasConfirmedLocalMicrophone) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
     if (currentStepType !== 'record') {
       setVoiceMonitoring(false);
     }
@@ -3140,7 +2838,7 @@ const MusicSessionPage: React.FC = () => {
       clearStepCountdown();
       stopMetronome();
     };
-  }, [beginStepCountdown, clearStepCountdown, currentButtonTutorialKey, currentStepId, currentStepMusicId, currentStepType, ensureMusicDetails, playAudioUrl, resetTakeState, showStepTutorialModal, stopMetronome, stopMusicPlayback]);
+  }, [beginStepCountdown, buttonTutorialVersion, clearStepCountdown, currentButtonTutorialKey, currentStepId, currentStepMusicId, currentStepType, ensureMusicDetails, hasConfirmedLocalMicrophone, playAudioUrl, resetTakeState, showStepTutorialModal, stepTutorialVersion, stopMetronome, stopMusicPlayback]);
 
   useEffect(() => {
     if (!isRecording || isMicPaused) return;
@@ -3168,9 +2866,7 @@ const MusicSessionPage: React.FC = () => {
       setIsProcessing(true);
 
       try {
-        const audioBlob = currentStep.type === 'record'
-          ? await finalizeLocalRecording()
-          : await finalizeRecording(true);
+        const audioBlob = await finalizeLocalRecording();
         stopMusicPlayback(true);
         stopMetronome();
 
@@ -3208,7 +2904,6 @@ const MusicSessionPage: React.FC = () => {
     clearPendingReview,
     currentStep,
     finalizeLocalRecording,
-    finalizeRecording,
     isMicPaused,
     isRecording,
     resetTakeState,
@@ -3297,7 +2992,7 @@ const MusicSessionPage: React.FC = () => {
       return 'Parar e revisar';
     }
 
-    return isMicPaused ? 'Retomar' : 'Pausar';
+    return 'Parar e salvar';
   }, [currentListenEnded, currentStep, hasStartedCurrentTake, hasTriggeredListenPlayback, isMicPaused, isMusicPlaying, isRecording, musicProgress, stepCountdown]);
 
   const restartLabel = useMemo(() => {
@@ -4175,7 +3870,158 @@ const MusicSessionPage: React.FC = () => {
           </Box>
         </Box>
 
-        {currentStep && (
+        {!hasConfirmedLocalMicrophone && (
+          <Paper variant="outlined" sx={{ p: { xs: 2.5, md: 3 }, borderRadius: 3, bgcolor: 'rgba(25,118,210,0.03)' }}>
+            <Stack spacing={2.25}>
+              <Box>
+                <Typography variant="overline" sx={{ color: 'primary.main', fontWeight: 800, letterSpacing: '0.08em' }}>
+                  Preparação
+                </Typography>
+                <Typography variant="h5" sx={{ fontWeight: 800 }}>
+                  Teste o microfone uma vez
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                  Escolha o microfone que vai usar na sessão. Depois grave uma amostra de 5 segundos falando ou cantando no volume normal.
+                </Typography>
+              </Box>
+
+              <FormControl fullWidth disabled={micPreviewLoading || isMicTestRecording}>
+                <InputLabel id="local-microphone-label">Microfone local</InputLabel>
+                <Select
+                  labelId="local-microphone-label"
+                  label="Microfone local"
+                  value={selectedLocalMicrophoneId}
+                  onChange={(event: SelectChangeEvent<string>) => {
+                    const microphoneId = event.target.value;
+                    setSelectedLocalMicrophoneId(microphoneId);
+                    localStorage.setItem(LOCAL_RECORDING_MIC_STORAGE_KEY, microphoneId);
+                    setLocalRecordingReady(false);
+                    setHasConfirmedLocalMicrophone(false);
+                    clearMicTestAudio();
+                    closeLocalAudioStream();
+                  }}
+                >
+                  {localMicrophones.map((microphone, index) => {
+                    const microphoneId = getLocalMicrophoneId(microphone);
+                    return (
+                      <MenuItem key={microphoneId || index} value={microphoneId}>
+                        {getLocalMicrophoneLabel(microphone, index)}
+                      </MenuItem>
+                    );
+                  })}
+                </Select>
+                <FormHelperText>
+                  A gravação será feita pela API local em http://localhost:9000.
+                </FormHelperText>
+              </FormControl>
+
+              {isMicTestRecording && (
+                <Paper
+                  variant="outlined"
+                  sx={{
+                    p: 2,
+                    borderRadius: 3,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2,
+                    bgcolor: 'rgba(25,118,210,0.06)',
+                    borderColor: 'rgba(25,118,210,0.24)',
+                  }}
+                >
+                  <Box sx={{ position: 'relative', display: 'inline-flex' }}>
+                    <CircularProgress
+                      variant="determinate"
+                      value={((5 - (micTestSecondsRemaining ?? 0)) / 5) * 100}
+                      size={58}
+                      thickness={5}
+                    />
+                    <Box
+                      sx={{
+                        position: 'absolute',
+                        inset: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>
+                        {micTestSecondsRemaining ?? 0}s
+                      </Typography>
+                    </Box>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                      Fale agora perto do microfone
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Diga uma frase curta ou cante no mesmo volume que pretende usar na gravação.
+                    </Typography>
+                  </Box>
+                </Paper>
+              )}
+
+              <Box display="flex" flexWrap="wrap" gap={1.5} alignItems="center">
+                <Button
+                  variant="contained"
+                  onClick={() => {
+                    void handleTestLocalMicrophone();
+                  }}
+                  disabled={micPreviewLoading || !selectedLocalMicrophoneId || isMicTestRecording}
+                >
+                  {micPreviewLoading ? (
+                    <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
+                      <CircularProgress size={18} color="inherit" />
+                      {isMicTestRecording ? 'Gravando...' : 'Preparando...'}
+                    </Box>
+                  ) : 'Gravar teste de 5s'}
+                </Button>
+
+                <Button
+                  variant="outlined"
+                  onClick={() => {
+                    void prepareLocalRecordingMicrophone();
+                  }}
+                  disabled={micPreviewLoading || isMicTestRecording}
+                >
+                  Atualizar microfones
+                </Button>
+              </Box>
+
+              {micTestAudioUrl && (
+                <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2.5, bgcolor: 'background.paper' }}>
+                  <Typography variant="body2" sx={{ fontWeight: 700, mb: 1 }}>
+                    Ouça sua amostra
+                  </Typography>
+                  <Paper elevation={0} sx={{ height: 104, bgcolor: '#101217', borderRadius: 2, overflow: 'hidden', mb: 1.5 }}>
+                    <canvas ref={micTestCanvasRef} width="600" height="100" style={{ width: '100%', height: '100%' }} />
+                  </Paper>
+                  <audio controls src={micTestAudioUrl} style={{ width: '100%' }} />
+                </Paper>
+              )}
+
+              <Alert severity={!localMicrophones.length ? 'error' : localRecordingReady ? 'success' : 'warning'}>
+                {!localMicrophones.length
+                  ? 'API local sem microfones. Clone danielcasanova12/local-speech-recording-api e siga o README.md para rodar local.'
+                  : localRecordingReady
+                    ? 'Teste gravado. Confirme se a voz ficou clara para começar a sessão.'
+                    : 'Quando clicar em gravar, fale perto do microfone até o contador terminar.'}
+              </Alert>
+
+              <Box display="flex" justifyContent="flex-end">
+                <Button
+                  variant="contained"
+                  color="success"
+                  disabled={!localRecordingReady || isMicTestRecording || micPreviewLoading}
+                  onClick={() => setHasConfirmedLocalMicrophone(true)}
+                >
+                  Começar sessão
+                </Button>
+              </Box>
+            </Stack>
+          </Paper>
+        )}
+
+        {currentStep && hasConfirmedLocalMicrophone && (
           <>
             {currentStep.type !== 'phrase' && !(currentStep.type === 'record' && isRecordPreStart && stepCountdown === null) && (
               <Paper
@@ -4270,12 +4116,11 @@ const MusicSessionPage: React.FC = () => {
                       <Typography variant="h6">{formatClock(timer)}</Typography>
                     </Box>
 
-                    <AudioVisualizer
-                      mode="mic"
-                      canvasRef={canvasRef}
-                      dbfs={dbfs}
-                      isActive={isRecording && !isMicPaused}
-                    />
+                    {isRecording && (
+                      <Alert severity="info" sx={{ mb: 2 }}>
+                        Gravando pela API local.
+                      </Alert>
+                    )}
 
                     <Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 }, textAlign: 'center', borderRadius: 3 }}>
                       <Box
@@ -4433,12 +4278,11 @@ const MusicSessionPage: React.FC = () => {
                           <Typography variant="h6">{formatClock(timer)}</Typography>
                         </Box>
 
-                        <AudioVisualizer
-                          mode="mic"
-                          canvasRef={canvasRef}
-                          dbfs={dbfs}
-                          isActive={(isRecording && !isMicPaused) || micPreviewReady}
-                        />
+                        {isRecording && (
+                          <Alert severity="info" sx={{ mb: 2 }}>
+                            Gravando pela API local.
+                          </Alert>
+                        )}
                       </>
                     )}
 
@@ -4462,350 +4306,154 @@ const MusicSessionPage: React.FC = () => {
                     )}
 
                     {showRecordSetup ? (
-                      <Stack spacing={2}>
-                        <Paper
-                          variant="outlined"
-                          sx={{
-                            p: { xs: 1.75, md: 2 },
-                            borderRadius: 3,
-                            bgcolor: 'rgba(46,125,50,0.04)',
-                            borderColor: 'rgba(46,125,50,0.16)',
-                          }}
-                        >
-                          <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'success.dark', mb: 1.25 }}>
-                            Antes de gravar
-                          </Typography>
-                          <Tabs
-                            value={recordSetupTab}
-                            onChange={(_, value: RecordSetupTab) => {
-                              if (value === 'monitor' && !localRecordingReady) return;
-                              if (value === 'rhythm' && !localRecordingReady) return;
-                              setRecordSetupTab(value);
-                            }}
-                            variant="scrollable"
-                            scrollButtons="auto"
-                            sx={{ minHeight: 40 }}
-                          >
-                            <Tab value="microphone" label="1. Microfone" />
-                            <Tab value="monitor" label="2. Áudio de apoio" disabled={!localRecordingReady} />
-                            <Tab value="rhythm" label="3. Ritmo e gravar" disabled={!localRecordingReady} />
-                          </Tabs>
-                        </Paper>
-
-                        {recordSetupTab === 'microphone' && (
-                        <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: 'rgba(25,118,210,0.03)' }}>
+                      <Box
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns: { xs: '1fr', lg: '0.95fr 1.05fr' },
+                          gap: 2,
+                          alignItems: 'start',
+                        }}
+                      >
+                        <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3 }}>
                           <Typography variant="overline" sx={{ color: 'primary.main', fontWeight: 800, letterSpacing: '0.08em' }}>
-                            Microfone
+                            Áudio de apoio
                           </Typography>
-                          <Typography variant="h6" sx={{ mb: 0.75 }}>
-                            1. Escolha e teste antes da música
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary" sx={{ mb: 2.25 }}>
-                            Grave uma amostra curta: aproxime-se do microfone e fale ou cante uma frase no volume que usará na música.
-                          </Typography>
+                          <FormControl fullWidth sx={{ mt: 1.5 }} disabled={stepCountdown !== null || hasStartedCurrentTake}>
+                            <InputLabel id="monitor-mode-label">O que ouvir</InputLabel>
+                            <Select
+                              labelId="monitor-mode-label"
+                              label="O que ouvir"
+                              value={monitorMode}
+                              onChange={(event: SelectChangeEvent<MonitorMode>) => {
+                                setMonitorMode(event.target.value as MonitorMode);
+                                setStepAudioError(null);
+                              }}
+                            >
+                              <MenuItem value="none">Sem apoio</MenuItem>
+                              {currentMusicDetail?.vocal_audio_url && (
+                                <MenuItem value="vocal">Original com voz</MenuItem>
+                              )}
+                              {currentMusicDetail?.instrumental_audio_url && (
+                                <MenuItem value="instrumental">Instrumental</MenuItem>
+                              )}
+                            </Select>
+                          </FormControl>
 
-                          <Stack spacing={2}>
-                            <FormControl fullWidth disabled={micPreviewLoading || stepCountdown !== null || hasStartedCurrentTake}>
-                              <InputLabel id="local-microphone-label">Microfone local</InputLabel>
-                              <Select
-                                labelId="local-microphone-label"
-                                label="Microfone local"
-                                value={selectedLocalMicrophoneId}
-                                onChange={(event: SelectChangeEvent<string>) => {
-                                  const microphoneId = event.target.value;
-                                  setSelectedLocalMicrophoneId(microphoneId);
-                                  localStorage.setItem(LOCAL_RECORDING_MIC_STORAGE_KEY, microphoneId);
-                                  setLocalRecordingReady(false);
-                                  setMicPreviewReady(false);
-                                  setDbfs(-100);
-                                  clearMicTestAudio();
-                                  closeLocalAudioStream();
-                                }}
-                              >
-                                {localMicrophones.map((microphone, index) => {
-                                  const microphoneId = getLocalMicrophoneId(microphone);
-                                  return (
-                                    <MenuItem key={microphoneId || index} value={microphoneId}>
-                                      {getLocalMicrophoneLabel(microphone, index)}
-                                    </MenuItem>
-                                  );
-                                })}
-                              </Select>
-                              <FormHelperText>
-                                Se a lista estiver vazia, confirme que a API local está rodando e atualize a página.
-                              </FormHelperText>
-                            </FormControl>
-
-                            <Box display="flex" flexWrap="wrap" gap={1.5} alignItems="center">
-                              <Button
-                                variant="contained"
-                                onClick={() => {
-                                  void handleTestLocalMicrophone();
-                                }}
-                                disabled={micPreviewLoading || !selectedLocalMicrophoneId || stepCountdown !== null || hasStartedCurrentTake}
-                              >
-                                {micPreviewLoading ? (
-                                  <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
-                                    <CircularProgress size={18} color="inherit" />
-                                    {isMicTestRecording ? 'Gravando teste...' : 'Preparando...'}
-                                  </Box>
-                                ) : 'Gravar teste de 3s'}
-                              </Button>
-
-                              <Button
-                                variant="outlined"
-                                onClick={() => {
-                                  void prepareLocalRecordingMicrophone();
-                                }}
-                                disabled={micPreviewLoading || stepCountdown !== null || hasStartedCurrentTake}
-                              >
-                                Atualizar lista
-                              </Button>
-                            </Box>
-
-                            {micTestAudioUrl && (
-                              <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2.5, bgcolor: 'background.paper' }}>
-                                <Typography variant="body2" sx={{ fontWeight: 700, mb: 1 }}>
-                                  Ouça o teste do microfone
-                                </Typography>
-                                <Paper elevation={0} sx={{ height: 104, bgcolor: '#101217', borderRadius: 2, overflow: 'hidden', mb: 1.5 }}>
-                                  <canvas ref={micTestCanvasRef} width="600" height="100" style={{ width: '100%', height: '100%' }} />
-                                </Paper>
-                                <audio controls src={micTestAudioUrl} style={{ width: '100%' }} />
-                              </Paper>
+                          <FormControlLabel
+                            sx={{ mt: 1.5, mx: 0 }}
+                            control={(
+                              <Switch
+                                checked={voiceMonitoring}
+                                disabled={stepCountdown !== null || hasStartedCurrentTake}
+                                onChange={(event) => setVoiceMonitoring(event.target.checked)}
+                              />
                             )}
-
-                            <Alert severity={!localMicrophones.length ? 'error' : !localRecordingReady ? 'warning' : 'success'}>
-                              {!localMicrophones.length
-                                ? 'Inicie a API local de gravação em http://localhost:9000 para listar os microfones.'
-                                : localRecordingReady
-                                  ? 'Teste gravado. Ouça a amostra acima; se sua voz estiver clara e no volume certo, siga para o áudio de apoio.'
-                                  : 'Selecione um microfone e clique em Gravar teste de 3s antes de escolher o instrumental.'}
-                            </Alert>
-
-                            {localRecordingReady && (
-                              <Box display="flex" justifyContent="flex-end">
-                                <Button variant="contained" onClick={() => setRecordSetupTab('monitor')}>
-                                  Continuar para áudio de apoio
-                                </Button>
-                              </Box>
-                            )}
-                          </Stack>
+                            label="Ouvir minha voz no fone"
+                          />
                         </Paper>
-                        )}
 
-                        {recordSetupTab === 'monitor' && localRecordingReady && (
-                            <Paper variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
-                            <Typography variant="overline" sx={{ color: 'primary.main', fontWeight: 800, letterSpacing: '0.08em' }}>
-                              Áudio de apoio
-                            </Typography>
-                            <Typography variant="h6" sx={{ mb: 0.75 }}>
-                              1. O que você quer ouvir
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2.25 }}>
-                              Escolha o áudio que quer ouvir no fone. Ele não entra na gravação final.
-                            </Typography>
-
-                            <Stack spacing={2}>
-                              <FormControl fullWidth disabled={stepCountdown !== null || (hasStartedCurrentTake && !isMicPaused)}>
-                                <InputLabel id="monitor-mode-label">Áudio de referência</InputLabel>
-                                <Select
-                                  labelId="monitor-mode-label"
-                                  label="Áudio de referência"
-                                  value={monitorMode}
-                                  onChange={(event: SelectChangeEvent<MonitorMode>) => {
-                                    setMonitorMode(event.target.value as MonitorMode);
-                                    setStepAudioError(null);
-                                  }}
-                                >
-                                  <MenuItem value="none">Sem música de fundo</MenuItem>
-                                  {currentMusicDetail?.vocal_audio_url && (
-                                    <MenuItem value="vocal">Original com voz</MenuItem>
-                                  )}
-                                  {currentMusicDetail?.instrumental_audio_url && (
-                                    <MenuItem value="instrumental">Instrumental</MenuItem>
-                                  )}
-                                </Select>
-                                <FormHelperText>
-                                  Escolha o que fica mais fácil para você acompanhar.
-                                </FormHelperText>
-                              </FormControl>
-
-                              <Paper
-                                variant="outlined"
-                                sx={{
-                                  p: 1.5,
-                                  borderRadius: 2.5,
-                                  bgcolor: 'background.default',
-                                }}
-                              >
-                                <FormControlLabel
-                                  sx={{ m: 0, alignItems: 'flex-start' }}
-                                  control={(
-                                    <Switch
-                                      checked={voiceMonitoring}
-                                      disabled={stepCountdown !== null || (hasStartedCurrentTake && !isMicPaused)}
-                                      onChange={(event) => setVoiceMonitoring(event.target.checked)}
-                                    />
-                                  )}
-                                  label={(
-                                    <Box>
-                                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                        Ouvir minha própria voz durante o canto
-                                      </Typography>
-                                      <Typography variant="caption" color="text.secondary">
-                                        Ative isso apenas se quiser retorno local da sua voz no fone.
-                                      </Typography>
-                                    </Box>
-                                  )}
-                                />
-                              </Paper>
-
-                              <Box display="flex" justifyContent="space-between" flexWrap="wrap" gap={1.5}>
-                                <Button variant="outlined" onClick={() => setRecordSetupTab('microphone')}>
-                                  Voltar ao microfone
-                                </Button>
-                                <Button variant="contained" onClick={() => setRecordSetupTab('rhythm')}>
-                                  Continuar para ritmo
-                                </Button>
-                              </Box>
-                            </Stack>
-                            </Paper>
-                        )}
-
-                        {recordSetupTab === 'rhythm' && !localRecordingReady && (
-                          <Alert severity="warning" action={(
-                            <Button color="inherit" size="small" onClick={() => setRecordSetupTab('microphone')}>
-                              Testar microfone
-                            </Button>
-                          )}>
-                            Teste o microfone antes de começar a gravação.
-                          </Alert>
-                        )}
-
-                        {recordSetupTab === 'rhythm' && localRecordingReady && (
-                            <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: 'rgba(25,118,210,0.03)' }}>
+                        <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3, bgcolor: 'rgba(25,118,210,0.03)' }}>
+                          <Box display="flex" alignItems="center" justifyContent="space-between" gap={2} flexWrap="wrap">
                             <Typography variant="overline" sx={{ color: 'primary.main', fontWeight: 800, letterSpacing: '0.08em' }}>
                               Ritmo
                             </Typography>
-                            <Typography variant="h6" sx={{ mb: 0.75 }}>
-                              2. Metrônomo opcional
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2.25 }}>
-                              Use apenas se precisar de marcação de tempo.
-                            </Typography>
+                            <FormControlLabel
+                              sx={{ m: 0 }}
+                              control={(
+                                <Switch
+                                  checked={metronomeConfig.enabled}
+                                  disabled={stepCountdown !== null || hasStartedCurrentTake}
+                                  onChange={(event) => {
+                                    const checked = event.target.checked;
+                                    setMetronomeConfig((previous) => ({
+                                      ...previous,
+                                      enabled: checked,
+                                      bpm: previous.bpm || (currentMusicDetail?.bpm ? String(currentMusicDetail.bpm) : previous.bpm),
+                                      timeSignature: getDisplayTimeSignature(currentMusicDetail?.time_signature),
+                                    }));
+                                  }}
+                                />
+                              )}
+                              label="Metrônomo"
+                            />
+                          </Box>
 
-                            <Stack spacing={2}>
-                              <FormControlLabel
-                                control={(
-                                  <Switch
-                                    checked={metronomeConfig.enabled}
-                                    disabled={stepCountdown !== null || (hasStartedCurrentTake && !isMicPaused)}
-                                    onChange={(event) => {
-                                      const checked = event.target.checked;
-                                      setMetronomeConfig((previous) => ({
-                                        ...previous,
-                                        enabled: checked,
-                                        bpm: previous.bpm || (currentMusicDetail?.bpm ? String(currentMusicDetail.bpm) : previous.bpm),
-                                        timeSignature: getDisplayTimeSignature(currentMusicDetail?.time_signature),
-                                      }));
-                                    }}
-                                  />
-                                )}
-                                label="Usar metrônomo"
-                              />
-
-                              <Box
-                                sx={{
-                                  display: 'grid',
-                                  gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(140px, 0.7fr)' },
-                                  gap: 1.5,
+                          <Box
+                            sx={{
+                              mt: 1.5,
+                              display: 'grid',
+                              gridTemplateColumns: { xs: '1fr', sm: '1fr 0.8fr 0.8fr' },
+                              gap: 1.25,
+                            }}
+                          >
+                            <TextField
+                              label="BPM"
+                              type="number"
+                              value={metronomeConfig.bpm}
+                              disabled={stepCountdown !== null || !metronomeConfig.enabled || hasStartedCurrentTake}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                setMetronomeConfig(previous => ({ ...previous, bpm: value }));
+                              }}
+                              fullWidth
+                            />
+                            <TextField
+                              label="Compasso"
+                              value={metronomeConfig.timeSignature}
+                              disabled
+                              fullWidth
+                            />
+                            <FormControl fullWidth disabled={stepCountdown !== null || !metronomeConfig.enabled || hasStartedCurrentTake}>
+                              <InputLabel id="metronome-countin-label">Entrada</InputLabel>
+                              <Select
+                                labelId="metronome-countin-label"
+                                label="Entrada"
+                                value={String(metronomeConfig.countInBars)}
+                                onChange={(event) => {
+                                  setMetronomeConfig(previous => ({
+                                    ...previous,
+                                    countInBars: Number(event.target.value) as CountInOption,
+                                  }));
                                 }}
                               >
-                                <TextField
-                                  label="BPM da sessão"
-                                  type="number"
-                                  value={metronomeConfig.bpm}
-                                  disabled={stepCountdown !== null || !metronomeConfig.enabled || (hasStartedCurrentTake && !isMicPaused)}
-                                  onChange={(event) => {
-                                    const value = event.target.value;
-                                    setMetronomeConfig(previous => ({ ...previous, bpm: value }));
-                                  }}
-                                  helperText="Você pode ajustar para esta gravação."
-                                  fullWidth
-                                />
+                                <MenuItem value="0">Sem</MenuItem>
+                                <MenuItem value="1">1 compasso</MenuItem>
+                                <MenuItem value="2">2 compassos</MenuItem>
+                              </Select>
+                            </FormControl>
+                          </Box>
 
-                                <TextField
-                                  label="Compasso"
-                                  value={metronomeConfig.timeSignature}
-                                  disabled
-                                  helperText="Definido pela música."
-                                  fullWidth
-                                />
-                              </Box>
+                          <Box sx={{ mt: 1.5 }}>
+                            <Slider
+                              value={metronomeConfig.volume}
+                              min={0}
+                              max={100}
+                              step={1}
+                              disabled={stepCountdown !== null || !metronomeConfig.enabled || hasStartedCurrentTake}
+                              onChange={(_, value) => {
+                                setMetronomeConfig(previous => ({
+                                  ...previous,
+                                  volume: Array.isArray(value) ? value[0] : value,
+                                }));
+                              }}
+                              valueLabelDisplay="auto"
+                            />
+                          </Box>
 
-                              <FormControl fullWidth disabled={stepCountdown !== null || !metronomeConfig.enabled || (hasStartedCurrentTake && !isMicPaused)}>
-                                <InputLabel id="metronome-countin-label">Contagem inicial</InputLabel>
-                                <Select
-                                  labelId="metronome-countin-label"
-                                  label="Contagem inicial"
-                                  value={String(metronomeConfig.countInBars)}
-                                  onChange={(event) => {
-                                    setMetronomeConfig(previous => ({
-                                      ...previous,
-                                      countInBars: Number(event.target.value) as CountInOption,
-                                    }));
-                                  }}
-                                >
-                                  <MenuItem value="0">Sem contagem</MenuItem>
-                                  <MenuItem value="1">1 compasso</MenuItem>
-                                  <MenuItem value="2">2 compassos</MenuItem>
-                                </Select>
-                              </FormControl>
-
-                              <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2.5, bgcolor: 'background.paper' }}>
-                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                                  Volume do metrônomo: {metronomeConfig.volume}%
-                                </Typography>
-                                <Slider
-                                  value={metronomeConfig.volume}
-                                  min={0}
-                                  max={100}
-                                  step={1}
-                                  disabled={stepCountdown !== null || !metronomeConfig.enabled || (hasStartedCurrentTake && !isMicPaused)}
-                                  onChange={(_, value) => {
-                                    setMetronomeConfig(previous => ({
-                                      ...previous,
-                                      volume: Array.isArray(value) ? value[0] : value,
-                                    }));
-                                  }}
-                                  valueLabelDisplay="auto"
-                                />
-                              </Paper>
-
-                              <Alert severity="warning" sx={{ borderRadius: 2.5 }}>
-                                Use fones para o metrônomo não vazar na gravação.
-                              </Alert>
-
-                              <Box display="flex" justifyContent="space-between" flexWrap="wrap" gap={1.5}>
-                                <Button variant="outlined" onClick={() => setRecordSetupTab('monitor')}>
-                                  Voltar ao áudio de apoio
-                                </Button>
-                                <Button
-                                  variant="contained"
-                                  color="success"
-                                  onClick={() => {
-                                    queueCurrentRecordTake(true);
-                                  }}
-                                  disabled={isProcessing || stepCountdown !== null || hasStartedCurrentTake || !localRecordingReady}
-                                >
-                                  Começar gravação
-                                </Button>
-                              </Box>
-                            </Stack>
-                            </Paper>
-                        )}
-                      </Stack>
+                          <Box display="flex" justifyContent="flex-end" sx={{ mt: 1.5 }}>
+                            <Button
+                              variant="contained"
+                              color="success"
+                              onClick={() => {
+                                queueCurrentRecordTake(true);
+                              }}
+                              disabled={isProcessing || stepCountdown !== null || hasStartedCurrentTake || !localRecordingReady}
+                            >
+                              Começar gravação
+                            </Button>
+                          </Box>
+                        </Paper>
+                      </Box>
                     ) : (
                       <Paper
                         variant="outlined"
@@ -4849,6 +4497,7 @@ const MusicSessionPage: React.FC = () => {
         )}
       </Paper>
 
+      {hasConfirmedLocalMicrophone && (
       <Paper
         elevation={6}
         sx={{
@@ -4949,6 +4598,7 @@ const MusicSessionPage: React.FC = () => {
           </Box>
         </Box>
       </Paper>
+      )}
 
       <Box mt={2} mb={6} display="flex" justifyContent="center" gap={2} flexWrap="wrap">
         <Button variant="outlined" onClick={() => navigate('/')}>
