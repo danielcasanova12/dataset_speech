@@ -4,6 +4,7 @@ import { useAutoLogout } from '../hooks/useAutoLogout';
 
 interface AuthContextType {
   isAuthenticated: boolean;
+  isAuthLoading: boolean;
   isAdmin: boolean;
   login: (username: string, password: string) => Promise<void>;
   register: (data: UserRegistrationData) => Promise<void>;
@@ -15,7 +16,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // O token agora é gerenciado internamente pela API e pelo estado de autenticação
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!sessionStorage.getItem('is_auth'));
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(!!sessionStorage.getItem('access_token'));
   const [isAdmin, setIsAdmin] = useState<boolean>(sessionStorage.getItem('is_admin') === 'true');
   const [loginTime, setLoginTime] = useState<string | null>(localStorage.getItem('login_time'));
   const [activeSession, setActiveSession] = useState<{id: number, createdAt: string} | null>(null);
@@ -43,7 +45,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           setIsAuthenticated(false);
           setIsAdmin(false);
           setLoginTime(null);
+        })
+        .finally(() => {
+          setIsAuthLoading(false);
         });
+    } else {
+      setIsAuthLoading(false);
     }
     if (storedLoginTime) {
       setLoginTime(storedLoginTime);
@@ -51,6 +58,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const logout = useCallback(() => {
+    void api.logout().catch((error) => {
+      console.warn('Não foi possível encerrar a sessão no servidor:', error);
+    });
     sessionStorage.removeItem('access_token');
     sessionStorage.removeItem('is_auth');
     sessionStorage.removeItem('is_admin');
@@ -117,7 +127,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   });
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, isAdmin, login, register, logout, setActiveSessionInfo }}>
+    <AuthContext.Provider value={{ isAuthenticated, isAuthLoading, isAdmin, login, register, logout, setActiveSessionInfo }}>
       {showWarning && (
         <div style={{
           position: 'fixed',

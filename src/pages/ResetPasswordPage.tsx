@@ -43,7 +43,7 @@ const ResetPasswordPage: React.FC = () => {
       setMessage('Sua senha foi redefinida com sucesso! Você já pode fazer o login.');
       setTimeout(() => navigate('/login'), 3000);
     } catch (err: any) {
-      setError('Falha ao redefinir a senha. O token pode ser inválido ou ter expirado.');
+      setError(err.message || 'Falha ao redefinir a senha. O token pode ser inválido ou ter expirado.');
     } finally {
       setIsLoading(false);
     }

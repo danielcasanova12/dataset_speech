@@ -17,8 +17,9 @@ const getHeaders = (contentType: string | null = 'application/json') => {
   if (contentType) {
     headers['Content-Type'] = contentType;
   }
-  if (memoryToken) {
-    headers['Authorization'] = `Bearer ${memoryToken}`;
+  const token = getApiToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
   }
   return headers;
 };
@@ -34,26 +35,68 @@ const readResponseBody = async (response: Response): Promise<any> => {
   return text || null;
 };
 
-const getErrorMessage = async (response: Response, fallback: string): Promise<string> => {
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly code?: string,
+    public readonly fieldErrors?: Record<string, string[]>,
+  ) {
+    super(message);
+    this.name = 'ApiRequestError';
+  }
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  email: 'E-mail',
+  password: 'Senha',
+  language: 'Idioma',
+  cidade_nascimento: 'Cidade de nascimento',
+  cidade_atual: 'Cidade atual',
+  data_nascimento: 'Data de nascimento',
+};
+
+const getApiError = async (response: Response, fallback: string): Promise<ApiRequestError> => {
   const data = await readResponseBody(response);
 
-  if (!data) return fallback;
+  if (!data) return new ApiRequestError(fallback, response.status);
 
-  if (typeof data === 'string') return data;
+  if (typeof data === 'string') return new ApiRequestError(data, response.status);
 
-  const detail = data.detail;
-  if (typeof detail === 'string') return detail;
+  const envelope = data.error && typeof data.error === 'object' ? data.error : data;
+  const fieldErrors = envelope.field_errors && typeof envelope.field_errors === 'object'
+    ? envelope.field_errors as Record<string, string[]>
+    : undefined;
+  const fieldMessage = fieldErrors
+    ? Object.entries(fieldErrors)
+        .flatMap(([field, messages]) => {
+          const label = FIELD_LABELS[field] || field;
+          const normalizedMessages = Array.isArray(messages) ? messages : [String(messages)];
+          return normalizedMessages.map(message => `${label}: ${message}`);
+        })
+        .join(' ')
+    : '';
+
+  const detail = envelope.detail;
+  let message = '';
+  if (typeof detail === 'string') message = detail;
   if (Array.isArray(detail)) {
-    return detail
+    message = detail
       .map(item => item?.msg || item?.message)
       .filter(Boolean)
-      .join(' ') || fallback;
+      .join(' ');
   }
-  if (detail && typeof detail === 'object') {
-    return detail.message || detail.detail || JSON.stringify(detail);
+  if (!message && detail && typeof detail === 'object') {
+    message = detail.message || detail.detail || JSON.stringify(detail);
   }
+  if (!message) message = envelope.message || fallback;
+  if (fieldMessage) message = `${message} ${fieldMessage}`.trim();
 
-  return data.message || fallback;
+  return new ApiRequestError(message, response.status, envelope.code, fieldErrors);
+};
+
+const getErrorMessage = async (response: Response, fallback: string): Promise<string> => {
+  return (await getApiError(response, fallback)).message;
 };
 
 // Wrapper para fetch para centralizar segurança e credenciais com lógica de retry e timeout
@@ -187,7 +230,7 @@ export interface LocalRecordingMetadata {
 }
 
 export interface LocalRecordingStartPayload {
-  user_id: number;
+  user_id: string;
   session_id: number;
   id_recordings: number;
   dataset_id: number;
@@ -195,13 +238,13 @@ export interface LocalRecordingStartPayload {
   created_at: string;
   audio_id: string;
   step_type: 'music' | 'spoken';
-  frase_content?: string;
+  frase_content: string;
   text_prompt?: string;
   background_audio_url?: string;
 }
 
 export interface LocalRecordingStopPayload {
-  user_id: number;
+  user_id: string;
   session_id: number;
   id_recordings: number;
 }
@@ -280,7 +323,7 @@ export const api = {
     });
 
     if (!response.ok) {
-        throw new Error(await getErrorMessage(response, 'Login failed'));
+        throw await getApiError(response, 'Falha no login. Verifique suas credenciais.');
     }
 
     const data = await response.json();
@@ -296,7 +339,18 @@ export const api = {
     });
 
     if (!response.ok) {
-        throw new Error(await getErrorMessage(response, 'Registration failed'));
+        throw await getApiError(response, 'Falha no cadastro. Verifique os dados informados.');
+    }
+  },
+
+  logout: async (): Promise<void> => {
+    const response = await secureFetch(buildApiUrl('/auth/jwt/logout'), {
+      method: 'POST',
+      headers: getHeaders(),
+    }, 0);
+
+    if (!response.ok && response.status !== 401) {
+      throw await getApiError(response, 'Não foi possível encerrar a sessão no servidor.');
     }
   },
 
@@ -307,7 +361,7 @@ export const api = {
     });
 
     if (!response.ok) {
-      throw new Error('Não foi possível carregar o usuário atual.');
+      throw await getApiError(response, 'Não foi possível carregar o usuário atual.');
     }
 
     return response.json();
@@ -316,40 +370,33 @@ export const api = {
   createSession: async (
     dataset_id: number,
     termos: boolean,
-    extra?: { session_type?: 'general' | 'music' }
   ): Promise<SessionResponse> => {
     const response = await secureFetch(buildApiUrl('/api/v1/sessions'), {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ dataset_id, termos, ...extra }),
+      body: JSON.stringify({ dataset_id, termos }),
     });
 
     if (!response.ok) {
-        const errorData = await readResponseBody(response);
-        const detail = errorData?.detail;
-        if (response.status === 409 && detail?.session) {
-            const error = new Error(detail?.message || 'An active session already exists for this user.') as any;
-            error.session = detail.session;
-            throw error;
-        }
-        if (typeof detail === 'string') {
-          throw new Error(detail);
-        }
-        if (detail && typeof detail === 'object') {
-          throw new Error(detail.message || detail.detail || 'Failed to create session');
-        }
-        throw new Error(errorData?.message || 'Failed to create session');
-    }
-    return response.json();
-  },
+      const errorData = await readResponseBody(response);
+      const envelope = errorData?.error && typeof errorData.error === 'object' ? errorData.error : errorData;
+      const detail = envelope?.detail;
+      const existingSession = detail?.session || envelope?.session;
+      if (response.status === 409 && existingSession) {
+        const error = new ApiRequestError(
+          detail?.message || envelope?.message || 'Já existe uma sessão ativa para este usuário.',
+          response.status,
+          envelope?.code,
+        ) as ApiRequestError & { session: SessionResponse };
+        error.session = existingSession;
+        throw error;
+      }
 
-  // Simplificado: Todas as funções agora usam getHeaders() interno
-  getSession: async (id: string): Promise<SessionResponse> => {
-    const response = await secureFetch(buildApiUrl(`/api/v1/sessions/${id}`), {
-      method: 'GET',
-      headers: getHeaders(),
-    });
-    if (!response.ok) throw new Error('Failed to fetch session');
+      const message = typeof detail === 'string'
+        ? detail
+        : detail?.message || detail?.detail || envelope?.message || 'Não foi possível criar a sessão.';
+      throw new ApiRequestError(message, response.status, envelope?.code, envelope?.field_errors);
+    }
     return response.json();
   },
 
@@ -374,7 +421,7 @@ export const api = {
     });
 
     if (response.status !== 202) {
-      throw new Error('Failed to send password reset email');
+      throw await getApiError(response, 'Falha ao enviar o e-mail de redefinição de senha.');
     }
   },
 
@@ -386,7 +433,7 @@ export const api = {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to reset password');
+      throw await getApiError(response, 'Falha ao redefinir a senha.');
     }
   },
 
@@ -568,20 +615,14 @@ export const api = {
     duration: number,
     format: string,
     sampleRate: number,
-    is_room_tone: boolean,
     phraseId?: number,
     frase_content?: string,
     room_tone_type?: 'start' | 'end',
-    audioId?: string,
-    step_type?: 'music' | 'spoken',
-    background_audio_url?: string,
-    text_prompt?: string
   ): Promise<any> => {
     const formData = new FormData();
     formData.append('session_id', sessionId.toString());
     formData.append('dataset_id', datasetId.toString());
     formData.append('bloco_id', blockId.toString());
-    formData.append('audio_id', audioId || '');
     formData.append('duration', duration.toString());
     formData.append('format', format);
     formData.append('sample_rate', sampleRate.toString());
@@ -589,13 +630,9 @@ export const api = {
     formData.append('is_test', 'false');
     formData.append('room_tone_start', room_tone_type === 'start' ? '1' : '0');
     formData.append('room_tone_end', room_tone_type === 'end' ? '1' : '0');
-    formData.append('is_room_tone', String(is_room_tone));
 
     if (phraseId) formData.append('frase_id', phraseId.toString());
     if (frase_content) formData.append('frase_content', frase_content);
-    if (step_type) formData.append('step_type', step_type);
-    if (background_audio_url) formData.append('background_audio_url', background_audio_url);
-    if (text_prompt) formData.append('text_prompt', text_prompt);
 
     const response = await secureFetch(buildApiUrl('/api/v1/recordings'), {
       method: 'POST',
@@ -736,7 +773,29 @@ export const api = {
       throw new Error(await getErrorMessage(response, 'Não foi possível enviar a gravação local para a API remota.'));
     }
 
-    return response.json().catch(() => ({}));
+    const data = await response.json().catch(() => ({}));
+    if (data && data.success === false) {
+      throw new Error(data.message || 'Não foi possível enviar a gravação local para a API remota.');
+    }
+    return data;
+  },
+
+  uploadLocalRecording: async (idRecordings: number, userId: string): Promise<any> => {
+    const token = getApiToken();
+    const response = await fetch(`${LOCAL_RECORDING_API_BASE_URL}/api/recordings/${idRecordings}/upload`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ user_id: userId }),
+    });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, 'Não foi possível enviar a gravação local para a API remota.'));
+    }
+
+    return { ok: true, status: response.status };
   },
 
   heartbeat: async (): Promise<void> => {

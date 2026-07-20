@@ -898,11 +898,9 @@ const RecordingPage: React.FC = () => {
         duration,
         'wav',
         sampleRate,
-        is_room_tone,
         !is_room_tone ? phrases[currentPhraseIndex].id : undefined,
         !is_room_tone ? phrases[currentPhraseIndex].text : undefined,
-        room_tone_type,
-        !is_room_tone ? phrases[currentPhraseIndex].id.toString() : "1"
+        room_tone_type
       );
       if (!is_room_tone) {
         setTotalRecordedTime(prev => prev + duration);

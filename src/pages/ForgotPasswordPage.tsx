@@ -18,7 +18,7 @@ const ForgotPasswordPage: React.FC = () => {
       await api.forgotPassword(email);
       setMessage('Se um e-mail com este endereço existir, um link de redefinição de senha foi enviado.');
     } catch (err: any) {
-      setError('Falha ao enviar o e-mail de redefinição de senha.');
+      setError(err.message || 'Falha ao enviar o e-mail de redefinição de senha.');
     } finally {
       setIsLoading(false);
     }

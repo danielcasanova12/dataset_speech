@@ -18,17 +18,8 @@ import ConsentScreen from '../components/ConsentScreen';
 import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs from 'dayjs';
-
-interface IBGEUFResponse {
-  id: number;
-  sigla: string;
-  nome: string;
-}
-
-interface IBGECidadeResponse {
-  id: number;
-  nome: string;
-}
+import BrazilLocationFields from '../components/BrazilLocationFields';
+import { normalizeHousingHistory, validateRegistrationData } from '../utils/registration';
 
 const RegisterPage: React.FC = () => {
   const [activeStep, setActiveStep] = useState(0);
@@ -39,7 +30,7 @@ const RegisterPage: React.FC = () => {
     nome_completo: '',
     data_nascimento: '',
     genero: '',
-    language: '',
+    language: 'pt-BR',
     cidade_nascimento: { cidade: '', estado: '' },
     cidade_atual: { cidade: '', estado: '' },
     historico_moradia: [{ periodo: '', endereco: { cidade: '', estado: '' } }],
@@ -47,10 +38,6 @@ const RegisterPage: React.FC = () => {
   });
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [estados, setEstados] = useState<IBGEUFResponse[]>([]);
-  const [cidadesNascimento, setCidadesNascimento] = useState<IBGECidadeResponse[]>([]);
-  const [cidadesAtual, setCidadesAtual] = useState<IBGECidadeResponse[]>([]);
-  const [cidadesHistorico, setCidadesHistorico] = useState<{ [key: number]: IBGECidadeResponse[] }>({});
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const { register } = useAuth();
@@ -64,12 +51,6 @@ const RegisterPage: React.FC = () => {
 
   const [consentModalOpen, setConsentModalOpen] = useState(false);
   const [hasConsented, setHasConsented] = useState(false);
-
-  useEffect(() => {
-    fetch('https://servicodados.ibge.gov.br/api/v1/localidades/estados')
-      .then(response => response.json())
-      .then(data => setEstados(data.sort((a: IBGEUFResponse, b: IBGEUFResponse) => a.nome.localeCompare(b.nome))));
-  }, []);
 
   useEffect(() => {
     if (formData.password !== confirmPassword && confirmPassword) {
@@ -93,32 +74,18 @@ const RegisterPage: React.FC = () => {
     navigate('/');
   };
 
-  const fetchCidades = (estado: string, setCidades: React.Dispatch<React.SetStateAction<IBGECidadeResponse[]>>) => {
-    fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${estado}/municipios`)
-      .then(response => response.json())
-      .then(data => setCidades(data));
-  };
-
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleNestedChange = (parent: 'cidade_nascimento' | 'cidade_atual', field: 'cidade' | 'estado', value: string) => {
+  const handleHistoricoChange = (index: number, field: string, value: string) => {
     setFormData(prev => ({
       ...prev,
-      [parent]: { ...prev[parent], [field]: value }
+      historico_moradia: prev.historico_moradia.map((item, itemIndex) => (
+        itemIndex === index ? { ...item, [field]: value } : item
+      )),
     }));
-  };
-
-  const handleHistoricoChange = (index: number, field: string, value: string, subField?: string) => {
-    const newHistorico = [...formData.historico_moradia];
-    if (subField) {
-        newHistorico[index].endereco = { ...newHistorico[index].endereco, [subField]: value };
-    } else {
-        (newHistorico[index] as any)[field] = value;
-    }
-    setFormData(prev => ({ ...prev, historico_moradia: newHistorico }));
   };
   
   const addHistorico = () => {
@@ -145,29 +112,22 @@ const RegisterPage: React.FC = () => {
       return;
     }
 
-    // Email Validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      setValidationError(prev => ({ ...prev, email: 'Formato de e-mail inválido.' }));
-      return;
-    } else {
-      setValidationError(prev => ({ ...prev, email: '' }));
-    }
+    const registrationData: UserRegistrationData = {
+      ...formData,
+      historico_moradia: normalizeHousingHistory(formData.historico_moradia),
+    };
 
-    if (validationError.password) {
-      return; // Stop submission if passwords don't match
+    const validationMessage = validateRegistrationData(registrationData);
+    if (validationMessage) {
+      setError(validationMessage);
+      return;
+    }
+    if (formData.password !== confirmPassword) {
+      setValidationError(prev => ({ ...prev, password: 'As senhas não conferem.' }));
+      return;
     }
 
     setIsLoading(true);
-    
-    // Process data before sending
-    const registrationData: UserRegistrationData = {
-      ...formData,
-      // If the only item has no period, it's considered empty.
-      historico_moradia: formData.historico_moradia.length === 1 && !formData.historico_moradia[0].periodo 
-        ? [] 
-        : formData.historico_moradia,
-    };
 
     try {
       await register(registrationData);
@@ -250,6 +210,22 @@ const RegisterPage: React.FC = () => {
                           </Select>
                         </FormControl>
                       </Grid>
+                      <Grid item xs={12}>
+                        <FormControl fullWidth required>
+                          <InputLabel>Idioma principal</InputLabel>
+                          <Select
+                            name="language"
+                            label="Idioma principal"
+                            value={formData.language}
+                            onChange={(e) => setFormData(prev => ({ ...prev, language: e.target.value }))}
+                          >
+                            <MenuItem value="pt-BR">Português (Brasil)</MenuItem>
+                            <MenuItem value="en">Inglês</MenuItem>
+                            <MenuItem value="es">Espanhol</MenuItem>
+                            <MenuItem value="other">Outro</MenuItem>
+                          </Select>
+                        </FormControl>
+                      </Grid>
                     </Grid>
                 </Box>
                 </>
@@ -284,6 +260,7 @@ const RegisterPage: React.FC = () => {
                                 label="Senha" 
                                 name="password" 
                                 type={showPassword ? 'text' : 'password'}
+                                inputProps={{ minLength: 8 }}
                                 value={formData.password} 
                                 onChange={handleChange} 
                                 error={!!validationError.password}
@@ -310,6 +287,7 @@ const RegisterPage: React.FC = () => {
                                 label="Confirmar Senha" 
                                 name="confirmPassword" 
                                 type={showConfirmPassword ? 'text' : 'password'}
+                                inputProps={{ minLength: 8 }}
                                 value={confirmPassword} 
                                 onChange={(e) => setConfirmPassword(e.target.value)}
                                 error={!!validationError.password}
@@ -347,38 +325,11 @@ const RegisterPage: React.FC = () => {
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
                             Informe aqui o estado e a cidade onde você nasceu. Essa informação é fundamental para identificarmos a origem do seu sotaque.
                         </Typography>
-                        <Grid container spacing={2}>
-                            <Grid item xs={12} sm={6}>
-                                <FormControl fullWidth>
-                                    <InputLabel>Estado</InputLabel>
-                                    <Select
-                                        value={formData.cidade_nascimento.estado}
-                                        onChange={(e) => {
-                                            handleNestedChange('cidade_nascimento', 'estado', e.target.value);
-                                            handleNestedChange('cidade_nascimento', 'cidade', '');
-                                            fetchCidades(e.target.value, setCidadesNascimento);
-                                        }}
-                                    >
-                                        {estados.map(estado => (
-                                            <MenuItem key={estado.id} value={estado.sigla}>{estado.nome}</MenuItem>
-                                        ))}
-                                    </Select>
-                                </FormControl>
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <FormControl fullWidth disabled={!formData.cidade_nascimento.estado}>
-                                    <InputLabel>Cidade</InputLabel>
-                                    <Select
-                                        value={formData.cidade_nascimento.cidade}
-                                        onChange={(e) => handleNestedChange('cidade_nascimento', 'cidade', e.target.value)}
-                                    >
-                                        {cidadesNascimento.map(cidade => (
-                                            <MenuItem key={cidade.id} value={cidade.nome}>{cidade.nome}</MenuItem>
-                                        ))}
-                                    </Select>
-                                </FormControl>
-                            </Grid>
-                        </Grid>
+                        <BrazilLocationFields
+                          required
+                          value={formData.cidade_nascimento}
+                          onChange={(address) => setFormData(prev => ({ ...prev, cidade_nascimento: address }))}
+                        />
                     </Box>
                   </Grid>
 
@@ -391,38 +342,11 @@ const RegisterPage: React.FC = () => {
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
                             Informe o local onde você reside atualmente.
                         </Typography>
-                        <Grid container spacing={2}>
-                            <Grid item xs={12} sm={6}>
-                                <FormControl fullWidth>
-                                    <InputLabel>Estado</InputLabel>
-                                    <Select
-                                        value={formData.cidade_atual.estado}
-                                        onChange={(e) => {
-                                            handleNestedChange('cidade_atual', 'estado', e.target.value);
-                                            handleNestedChange('cidade_atual', 'cidade', '');
-                                            fetchCidades(e.target.value, setCidadesAtual);
-                                        }}
-                                    >
-                                        {estados.map(estado => (
-                                            <MenuItem key={estado.id} value={estado.sigla}>{estado.nome}</MenuItem>
-                                        ))}
-                                    </Select>
-                                </FormControl>
-                            </Grid>
-                            <Grid item xs={12} sm={6}>
-                                <FormControl fullWidth disabled={!formData.cidade_atual.estado}>
-                                    <InputLabel>Cidade</InputLabel>
-                                    <Select
-                                        value={formData.cidade_atual.cidade}
-                                        onChange={(e) => handleNestedChange('cidade_atual', 'cidade', e.target.value)}
-                                    >
-                                        {cidadesAtual.map(cidade => (
-                                            <MenuItem key={cidade.id} value={cidade.nome}>{cidade.nome}</MenuItem>
-                                        ))}
-                                    </Select>
-                                </FormControl>
-                            </Grid>
-                        </Grid>
+                        <BrazilLocationFields
+                          required
+                          value={formData.cidade_atual}
+                          onChange={(address) => setFormData(prev => ({ ...prev, cidade_atual: address }))}
+                        />
                     </Box>
                   </Grid>
                 </Grid>
@@ -459,35 +383,17 @@ const RegisterPage: React.FC = () => {
                                   </Select>
                               </FormControl>
                           </Grid>
-                          <Grid item xs={12} sm={3}>
-                              <FormControl fullWidth>
-                                  <InputLabel>Estado</InputLabel>
-                                  <Select
-                                      value={item.endereco.estado}
-                                      onChange={(e) => {
-                                          handleHistoricoChange(index, 'endereco', e.target.value, 'estado');
-                                          handleHistoricoChange(index, 'endereco', '', 'cidade');
-                                          fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${e.target.value}/municipios`)
-                                              .then(response => response.json())
-                                              .then(data => setCidadesHistorico(prev => ({ ...prev, [index]: data })));
-                                      }}
-                                  >
-                                      {estados.map(estado => <MenuItem key={estado.id} value={estado.sigla}>{estado.nome}</MenuItem>)}
-                                  </Select>
-                              </FormControl>
-                          </Grid>
-                          <Grid item xs={12} sm={3}>
-                              <FormControl fullWidth disabled={!item.endereco.estado}>
-                                  <InputLabel>Cidade</InputLabel>
-                                  <Select
-                                      value={item.endereco.cidade}
-                                      onChange={(e) => handleHistoricoChange(index, 'endereco', e.target.value, 'cidade')}
-                                  >
-                                      {(cidadesHistorico[index] || []).map(cidade => (
-                                          <MenuItem key={cidade.id} value={cidade.nome}>{cidade.nome}</MenuItem>
-                                      ))}
-                                  </Select>
-                              </FormControl>
+                          <Grid item xs={12} sm={6}>
+                              <BrazilLocationFields
+                                value={item.endereco}
+                                onChange={(address) => {
+                                  setFormData(prev => {
+                                    const newHistorico = [...prev.historico_moradia];
+                                    newHistorico[index] = { ...newHistorico[index], endereco: address };
+                                    return { ...prev, historico_moradia: newHistorico };
+                                  });
+                                }}
+                              />
                           </Grid>
                           <Grid item xs={12} sm={2}>
                               <IconButton color="error" onClick={() => removeHistorico(index)}>
